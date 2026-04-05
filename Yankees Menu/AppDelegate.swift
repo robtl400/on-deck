@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("📱 Creating status item...")
         
         NSLog("🔍 Status item: \(statusItem)")
-        NSLog("🔍 Status item button: \(statusItem.button ?? "nil")")
+        NSLog("🔍 Status item button: \(String(describing: statusItem.button))")
         
         if statusItem.button == nil {
             NSLog("❌ Status item button is nil! This shouldn't happen...")
@@ -61,28 +61,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             print("[GameFetcher]", state) // ← verify data in Xcode console
 
-            if case .error = state {
-                self.consecutiveFailures += 1
-                if self.consecutiveFailures < 3 {
-                    // Keep displaying last known state; schedule retry at normal interval.
-                    DispatchQueue.main.async { self.scheduleNextRefresh(for: state) }
-                    return
-                }
-                // After 3+ failures, mark the displayed title as stale.
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if case .error = state {
+                    self.consecutiveFailures += 1
+                    if self.consecutiveFailures < 3 {
+                        // Keep displaying last known state; schedule retry at normal interval.
+                        self.scheduleNextRefresh(for: state)
+                        return
+                    }
+                    // After 3+ failures, mark the displayed title as stale.
                     if let current = self.statusItem.button?.title, !current.hasSuffix(" ·?") {
                         self.statusItem.button?.title = current + " ·?"
                     }
                     self.scheduleNextRefresh(for: state)
+                } else {
+                    self.consecutiveFailures = 0
+                    self.apply(state: state)
+                    self.scheduleNextRefresh(for: state)
                 }
-                return
-            } else {
-                self.consecutiveFailures = 0
-            }
-
-            DispatchQueue.main.async {
-                self.apply(state: state)
-                self.scheduleNextRefresh(for: state)
             }
         }
     }
