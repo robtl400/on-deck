@@ -125,4 +125,51 @@ final class TitleFormattingTests: XCTestCase {
                                            homeAbbr: "BOS", homeId: 111, homeRuns: 3))
         XCTAssertEqual(title, "NYY 3 – 3 BOS · T")
     }
+
+    // MARK: - Non-Yankees selected team
+
+    func testFinalNonYankeesWin() {
+        // Dodgers (119) are home and win — selectedTeamId must drive the W/L label.
+        let title = makeTitle(
+            for: .final_(awayAbbr: "SF", awayId: 137, awayRuns: 2,
+                         homeAbbr: "LAD", homeId: 119, homeRuns: 5),
+            selectedTeamId: 119)
+        XCTAssertEqual(title, "SF 2 – 5 LAD · W")
+    }
+
+    func testFinalNonYankeesLose() {
+        // Dodgers (119) are away and lose.
+        let title = makeTitle(
+            for: .final_(awayAbbr: "LAD", awayId: 119, awayRuns: 1,
+                         homeAbbr: "SF", homeId: 137, homeRuns: 4),
+            selectedTeamId: 119)
+        XCTAssertEqual(title, "LAD 1 – 4 SF · L")
+    }
+
+    func testOffSeasonNonYankees() {
+        // Off-season label should reflect the selected team, not always "NYY".
+        let title = makeTitle(for: .offSeason, selectedTeamId: 119)
+        XCTAssertEqual(title, "LAD · Off Season")
+    }
+
+    // MARK: - espnCode coverage
+
+    func testAllThirtyEspnCodes() {
+        let expected: [Int: String] = [
+            108: "laa", 109: "ari", 110: "bal", 111: "bos", 112: "chc",
+            113: "cin", 114: "cle", 115: "col", 116: "det", 117: "hou",
+            118: "kc",  119: "lad", 120: "wsh", 121: "nym", 133: "oak",
+            134: "pit", 135: "sd",  136: "sea", 137: "sf",  138: "stl",
+            139: "tb",  140: "tex", 141: "tor", 142: "min", 143: "phi",
+            144: "atl", 145: "cws", 146: "mia", 147: "nyy", 158: "mil",
+        ]
+        for (id, code) in expected {
+            XCTAssertEqual(espnCode(for: id), code, "Wrong ESPN code for teamId \(id)")
+        }
+    }
+
+    func testEspnCodeUnknownFallback() {
+        XCTAssertEqual(espnCode(for: 0), "mlb")
+        XCTAssertEqual(espnCode(for: -1), "mlb")
+    }
 }

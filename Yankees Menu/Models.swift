@@ -55,3 +55,42 @@ func teamAbbreviation(_ name: String) -> String {
     // Fallback: first letter of each word, max 3 chars
     return name.split(separator: " ").prefix(3).map { String($0.prefix(1)) }.joined()
 }
+
+// MARK: - ESPN logo codes (all 30 MLB teams)
+// Used to load Assets.xcassets imagesets named "logo-{code}".
+
+func espnCode(for teamId: Int) -> String {
+    let table: [Int: String] = [
+        108: "laa",   // Los Angeles Angels
+        109: "ari",   // Arizona Diamondbacks
+        110: "bal",   // Baltimore Orioles
+        111: "bos",   // Boston Red Sox
+        112: "chc",   // Chicago Cubs
+        113: "cin",   // Cincinnati Reds
+        114: "cle",   // Cleveland Guardians
+        115: "col",   // Colorado Rockies
+        116: "det",   // Detroit Tigers
+        117: "hou",   // Houston Astros
+        118: "kc",    // Kansas City Royals
+        119: "lad",   // Los Angeles Dodgers
+        120: "wsh",   // Washington Nationals
+        121: "nym",   // New York Mets
+        133: "oak",   // Athletics (ESPN CDN still uses "oak")
+        134: "pit",   // Pittsburgh Pirates
+        135: "sd",    // San Diego Padres
+        136: "sea",   // Seattle Mariners
+        137: "sf",    // San Francisco Giants
+        138: "stl",   // St. Louis Cardinals
+        139: "tb",    // Tampa Bay Rays
+        140: "tex",   // Texas Rangers
+        141: "tor",   // Toronto Blue Jays
+        142: "min",   // Minnesota Twins
+        143: "phi",   // Philadelphia Phillies
+        144: "atl",   // Atlanta Braves
+        145: "cws",   // Chicago White Sox
+        146: "mia",   // Miami Marlins
+        147: "nyy",   // New York Yankees
+        158: "mil",   // Milwaukee Brewers
+    ]
+    return table[teamId] ?? "mlb"  // fallback: generic MLB logo
+}

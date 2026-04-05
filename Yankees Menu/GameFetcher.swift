@@ -103,6 +103,13 @@ final class GameFetcher {
     // Cleared when the game reaches Final so doubleheader game 2 is picked up correctly.
     private var activeGamePk: Int? = nil
 
+    // The selected team. Changing this clears activeGamePk so the next poll
+    // does a fresh schedule lookup for the new team instead of continuing to
+    // track the previous team's live game.
+    var teamId: Int = yankeesTeamId {
+        didSet { activeGamePk = nil }
+    }
+
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
@@ -129,7 +136,7 @@ final class GameFetcher {
         }
 
         let today = todayOfficialDate()
-        let scheduleURL = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(yankeesTeamId)&date=\(today)")!
+        let scheduleURL = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&date=\(today)")!
 
         fetch(url: scheduleURL, as: ScheduleResponse.self) { [weak self] result in
             guard let self else { return }
@@ -232,7 +239,7 @@ final class GameFetcher {
         }
         let endDate = Self.officialDateFormatter.string(
             from: todayDate.addingTimeInterval(14 * 86400))
-        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(yankeesTeamId)&startDate=\(today)&endDate=\(endDate)")!
+        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&startDate=\(today)&endDate=\(endDate)")!
 
         fetch(url: url, as: ScheduleResponse.self) { [weak self] result in
             guard let self else { return }
@@ -280,7 +287,7 @@ final class GameFetcher {
 
     // Returns (opponentName, opponentId, yankeesAreHome)
     private func opponentInfo(from game: ScheduleGame) -> (name: String, id: Int, isHome: Bool) {
-        if game.teams.away.team.id == yankeesTeamId {
+        if game.teams.away.team.id == teamId {
             return (game.teams.home.team.name, game.teams.home.team.id, false)
         } else {
             return (game.teams.away.team.name, game.teams.away.team.id, true)
