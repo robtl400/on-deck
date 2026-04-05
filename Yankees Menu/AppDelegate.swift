@@ -1,6 +1,5 @@
 import Cocoa
 
-@main
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
