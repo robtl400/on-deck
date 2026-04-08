@@ -208,11 +208,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copy.isTemplate = false
         copy.size = NSSize(width: 18, height: 18)
 
-        // CWS has a white-primary logo and ESPN has no dark/scoreboard variant for them.
-        // Composite a dark rounded-rect background so the logo is visible on light menu bars.
-        if teamId == 145 {
-            return withDarkBackground(copy, size: NSSize(width: 20, height: 20))
-        }
         return copy
     }
 
@@ -238,9 +233,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             att.image = img
             att.bounds = CGRect(x: 0, y: -3, width: 18, height: 18)
             s.append(NSAttributedString(attachment: att))
-            s.append(NSAttributedString(string: " "))
+            s.append(blueAtt(" "))
         }
-        s.append(NSAttributedString(string: espnCode(for: teamId).uppercased()))
+        s.append(blueAtt(espnCode(for: teamId).uppercased()))
         return s
     }
 
@@ -254,6 +249,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
        Next game: [user-logo] vs [opp-logo] · Fri 4/5 7:05 PM
        Off season:[user-logo] · Off Season
     */
+    private static let yankeeBlue = NSColor(red: 12/255, green: 35/255, blue: 64/255, alpha: 1)
+
+    /// Text string styled in Yankees navy, regular weight.
+    private func blueAtt(_ str: String) -> NSAttributedString {
+        NSAttributedString(string: str, attributes: [.foregroundColor: Self.yankeeBlue])
+    }
+
+    /// Text string styled in Yankees navy, bold weight.
+    private func boldBlueAtt(_ str: String) -> NSAttributedString {
+        NSAttributedString(string: str, attributes: [
+            .foregroundColor: Self.yankeeBlue,
+            .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+        ])
+    }
+
+    /// Bold navy vertical bar separator.
+    private func separatorAtt() -> NSAttributedString { boldBlueAtt("│") }
+
+    /// Bold navy middle dot.
+    private func dotAtt() -> NSAttributedString { boldBlueAtt(" · ") }
+
     private func makeAttributedTitle(for state: GameState) -> NSAttributedString {
         func logoAtt(for teamId: Int) -> NSAttributedString {
             guard let img = logoImage(for: teamId) else { return NSAttributedString() }
@@ -268,16 +284,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch state {
         case .upcoming(_, let opponentId, let isHome, let time):
             let timeStr = timeFormatter.string(from: time)
+            s.append(separatorAtt())
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: selectedTeamId))
-            s.append(NSAttributedString(string: isHome ? " vs " : " @ "))
+            s.append(blueAtt(isHome ? " vs " : " @ "))
             s.append(logoAtt(for: opponentId))
-            s.append(NSAttributedString(string: " · \(timeStr)"))
+            s.append(dotAtt())
+            s.append(blueAtt("\(timeStr) "))
+            s.append(separatorAtt())
 
         case .live(_, let awayId, let awayRuns, _, let homeId, let homeRuns, let inning, let isTop):
+            s.append(separatorAtt())
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: awayId))
-            s.append(NSAttributedString(string: " \(awayRuns) – \(homeRuns) "))
+            s.append(blueAtt(" "))
+            s.append(blueAtt("\(awayRuns)"))
+            s.append(blueAtt("-"))
+            s.append(blueAtt("\(homeRuns)"))
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: homeId))
-            s.append(NSAttributedString(string: " · \(isTop ? "↑" : "↓")\(inning)"))
+            s.append(dotAtt())
+            s.append(blueAtt("\(inning)\(isTop ? "↑" : "↓") "))
+            s.append(separatorAtt())
 
         case .final_(_, let awayId, let awayRuns, _, let homeId, let homeRuns):
             let result: String
@@ -290,28 +318,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 result = "L"
             }
+            s.append(separatorAtt())
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: awayId))
-            s.append(NSAttributedString(string: " \(awayRuns) – \(homeRuns) "))
+            s.append(blueAtt(" \(awayRuns) – \(homeRuns) "))
             s.append(logoAtt(for: homeId))
-            s.append(NSAttributedString(string: " · \(result)"))
+            s.append(dotAtt())
+            s.append(blueAtt("\(result) "))
+            s.append(separatorAtt())
 
         case .postponed(_, let opponentId, let isHome):
+            s.append(separatorAtt())
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: selectedTeamId))
-            s.append(NSAttributedString(string: isHome ? " vs " : " @ "))
+            s.append(blueAtt(isHome ? " vs " : " @ "))
             s.append(logoAtt(for: opponentId))
-            s.append(NSAttributedString(string: " · PPD"))
+            s.append(dotAtt())
+            s.append(blueAtt("PPD "))
+            s.append(separatorAtt())
 
         case .nextGame(_, let opponentId, let isHome, let date):
-            let dateStr = nextGameFormatter.string(from: date)
             let timeStr = timeFormatter.string(from: date)
+            s.append(separatorAtt())
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: selectedTeamId))
-            s.append(NSAttributedString(string: isHome ? " vs " : " @ "))
+            s.append(blueAtt(isHome ? " vs " : " @ "))
             s.append(logoAtt(for: opponentId))
-            s.append(NSAttributedString(string: " · \(dateStr) \(timeStr)"))
+            if Calendar.current.isDateInToday(date) {
+                s.append(dotAtt())
+                s.append(blueAtt("\(timeStr) "))
+            } else {
+                let dateStr = nextGameFormatter.string(from: date)
+                s.append(dotAtt())
+                s.append(blueAtt("\(dateStr)"))
+                s.append(dotAtt())
+                s.append(blueAtt("\(timeStr) "))
+            }
+            s.append(separatorAtt())
 
         case .offSeason:
+            s.append(separatorAtt())
+            s.append(blueAtt(" "))
             s.append(logoAtt(for: selectedTeamId))
-            s.append(NSAttributedString(string: " · Off Season"))
+            s.append(dotAtt())
+            s.append(blueAtt("Off Season "))
+            s.append(separatorAtt())
 
         case .error:
             // Never called from apply(state:) — error path is handled in refresh().
@@ -355,8 +406,9 @@ func makeTitle(for state: GameState, lastKnown: String = "NYY", selectedTeamId: 
     case .nextGame(let opp, _, let isHome, let date):
         let dateStr = nextGameFormatter.string(from: date)
         let timeStr = timeFormatter.string(from: date)
-        return isHome ? "vs \(teamAbbreviation(opp)) · \(dateStr) \(timeStr)"
-                      : "@ \(teamAbbreviation(opp)) · \(dateStr) \(timeStr)"
+        let suffix = Calendar.current.isDateInToday(date) ? " · \(timeStr)" : " · \(dateStr) · \(timeStr)"
+        return isHome ? "vs \(teamAbbreviation(opp))\(suffix)"
+                      : "@ \(teamAbbreviation(opp))\(suffix)"
 
     case .offSeason:
         return "\(espnCode(for: selectedTeamId).uppercased()) · Off Season"
@@ -375,7 +427,7 @@ private let timeFormatter: DateFormatter = {
 
 private let nextGameFormatter: DateFormatter = {
     let f = DateFormatter()
-    f.dateFormat = "EEE M/d"
+    f.dateFormat = "M/d"
     f.timeZone = TimeZone.current
     return f
 }()
