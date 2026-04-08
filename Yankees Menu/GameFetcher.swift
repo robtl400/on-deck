@@ -104,7 +104,7 @@ final class GameFetcher {
     private var activeGamePk: Int? = nil
 
     // Timestamp of when we first observed a Final state for today's game.
-    // After 30 minutes we switch to showing the next scheduled game.
+    // After 10 minutes we switch to showing the next scheduled game.
     private var finalSince: Date? = nil
 
     // The selected team. Changing this clears activeGamePk so the next poll
@@ -187,7 +187,7 @@ final class GameFetcher {
             // Schedule already has scores; use teamAbbreviation() to avoid a second network call.
             activeGamePk = nil
             if finalSince == nil { finalSince = Date() }
-            // After 30 minutes, switch to showing the next scheduled game.
+            // After 10 minutes, switch to showing the next scheduled game.
             if let since = finalSince, Date().timeIntervalSince(since) >= 10 * 60 {
                 finalSince = nil
                 fetchNextGame(after: todayOfficialDate(), completion: completion)
