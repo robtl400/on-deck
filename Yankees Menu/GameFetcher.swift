@@ -188,8 +188,10 @@ final class GameFetcher {
             activeGamePk = nil
             if finalSince == nil { finalSince = Date() }
             // After 10 minutes, switch to showing the next scheduled game.
+            // Do NOT reset finalSince here — keeping it ensures future polls also
+            // see the threshold as crossed and stay on nextGame rather than flipping
+            // back to showing the Final state for another 10-minute cycle.
             if let since = finalSince, Date().timeIntervalSince(since) >= 10 * 60 {
-                finalSince = nil
                 fetchNextGame(after: todayOfficialDate(), completion: completion)
                 return
             }
