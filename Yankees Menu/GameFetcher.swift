@@ -103,15 +103,11 @@ final class GameFetcher {
     // Cleared when the game reaches Final so doubleheader game 2 is picked up correctly.
     private var activeGamePk: Int? = nil
 
-    // Timestamp of when we first observed a Final state for today's game.
-    // After 10 minutes we switch to showing the next scheduled game.
-    private var finalSince: Date? = nil
-
     // The selected team. Changing this clears activeGamePk so the next poll
     // does a fresh schedule lookup for the new team instead of continuing to
     // track the previous team's live game.
     var teamId: Int = yankeesTeamId {
-        didSet { activeGamePk = nil; finalSince = nil }
+        didSet { activeGamePk = nil }
     }
 
     private let session: URLSession = {
@@ -133,8 +129,13 @@ final class GameFetcher {
         // and eliminates the redundant schedule call during active games).
         if let gamePk = activeGamePk {
             fetchLiveFeed(gamePk: gamePk) { [weak self] state in
-                if case .final_ = state { self?.activeGamePk = nil }
-                completion(state)
+                guard let self else { return }
+                if case .final_ = state {
+                    self.activeGamePk = nil
+                    self.fetchNextGame(after: self.todayOfficialDate(), completion: completion)
+                } else {
+                    completion(state)
+                }
             }
             return
         }
@@ -181,28 +182,19 @@ final class GameFetcher {
 
         case "Live":
             activeGamePk = game.gamePk
-            fetchLiveFeed(gamePk: game.gamePk, completion: completion)
+            fetchLiveFeed(gamePk: game.gamePk) { [weak self] state in
+                guard let self else { return }
+                if case .final_ = state {
+                    self.activeGamePk = nil
+                    self.fetchNextGame(after: self.todayOfficialDate(), completion: completion)
+                } else {
+                    completion(state)
+                }
+            }
 
         case "Final":
-            // Schedule already has scores; use teamAbbreviation() to avoid a second network call.
             activeGamePk = nil
-            if finalSince == nil { finalSince = Date() }
-            // After 10 minutes, switch to showing the next scheduled game.
-            // Do NOT reset finalSince here — keeping it ensures future polls also
-            // see the threshold as crossed and stay on nextGame rather than flipping
-            // back to showing the Final state for another 10-minute cycle.
-            if let since = finalSince, Date().timeIntervalSince(since) >= 10 * 60 {
-                fetchNextGame(after: todayOfficialDate(), completion: completion)
-                return
-            }
-            completion(.final_(
-                awayAbbr: teamAbbreviation(game.teams.away.team.name),
-                awayId:   game.teams.away.team.id,
-                awayRuns: game.teams.away.score ?? 0,
-                homeAbbr: teamAbbreviation(game.teams.home.team.name),
-                homeId:   game.teams.home.team.id,
-                homeRuns: game.teams.home.score ?? 0
-            ))
+            fetchNextGame(after: todayOfficialDate(), completion: completion)
 
         default:
             completion(.error)
