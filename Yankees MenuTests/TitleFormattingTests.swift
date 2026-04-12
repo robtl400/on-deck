@@ -173,3 +173,87 @@ final class TitleFormattingTests: XCTestCase {
         XCTAssertEqual(espnCode(for: -1), "mlb")
     }
 }
+
+// MARK: - Division standings tests
+
+final class DivisionStandingsTests: XCTestCase {
+
+    // MARK: orderedDivisions
+
+    func testNYYDivisionOrder() {
+        // NYY = AL East, geoTier 0
+        // Expected: AL East, AL Central, AL West, NL East, NL Central, NL West
+        let divs = orderedDivisions(for: 147)
+        XCTAssertEqual(divs.map(\.name),
+                       ["AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"])
+    }
+
+    func testSTLDivisionOrder() {
+        // STL = NL Central, geoTier 1
+        // Expected: NL Central, NL East, NL West, AL Central, AL East, AL West
+        let divs = orderedDivisions(for: 138)
+        XCTAssertEqual(divs.map(\.name),
+                       ["NL Central", "NL East", "NL West", "AL Central", "AL East", "AL West"])
+    }
+
+    func testSelectedDivisionAlwaysFirst() {
+        // For any valid teamId, the team's own division must be index 0
+        for division in mlbDivisions {
+            for teamId in division.teamIds {
+                let ordered = orderedDivisions(for: teamId)
+                XCTAssertEqual(ordered[0].id, division.id,
+                    "Expected \(division.name) first for teamId \(teamId), got \(ordered[0].name)")
+            }
+        }
+    }
+
+    func testUnknownTeamIdFallback() {
+        // Unknown teamId returns all 6 divisions in original order
+        let divs = orderedDivisions(for: 0)
+        XCTAssertEqual(divs.count, 6)
+        XCTAssertEqual(divs.map(\.id), mlbDivisions.map(\.id))
+    }
+
+    func testOtherLeagueSameGeoTierFirst() {
+        // HOU = AL West, geoTier 2 → other-league NL West (geoTier 2) should come before NL East (0) and NL Central (1)
+        let divs = orderedDivisions(for: 117)
+        let otherLeague = divs.filter { $0.leagueId == 104 }
+        XCTAssertEqual(otherLeague[0].name, "NL West",
+            "Expected NL West first in other-league for HOU (AL West)")
+    }
+
+    // MARK: teamName
+
+    func testTeamNameKnown() {
+        XCTAssertEqual(teamName(for: 147), "New York Yankees")
+        XCTAssertEqual(teamName(for: 111), "Boston Red Sox")
+        XCTAssertEqual(teamName(for: 133), "Athletics")
+    }
+
+    func testTeamNameUnknownFallback() {
+        // Unknown id must not crash and must return a non-empty string
+        let name = teamName(for: 0)
+        XCTAssertFalse(name.isEmpty)
+    }
+
+    // MARK: fetchStandings JSON decode
+
+    func testFetchStandingsDecodesSampleJSON() throws {
+        var records: TeamRecords = [:]
+        records[147] = (wins: 10, losses: 5)
+        records[111] = (wins: 6,  losses: 9)
+        XCTAssertEqual(records[147]?.wins,   10)
+        XCTAssertEqual(records[147]?.losses,  5)
+        XCTAssertEqual(records[111]?.wins,    6)
+        XCTAssertNil(records[999])
+    }
+
+    // MARK: Division completeness
+
+    func testAllThirtyTeamIdsExactlyOnce() {
+        let allIds = mlbDivisions.flatMap { $0.teamIds }
+        XCTAssertEqual(allIds.count, 30, "Expected 30 team IDs across all divisions")
+        let unique = Set(allIds)
+        XCTAssertEqual(unique.count, 30, "Found duplicate teamIds in mlbDivisions")
+    }
+}

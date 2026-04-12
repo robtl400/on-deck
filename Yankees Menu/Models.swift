@@ -94,3 +94,107 @@ func espnCode(for teamId: Int) -> String {
     ]
     return table[teamId] ?? "mlb"  // fallback: generic MLB logo
 }
+
+// MARK: - Division standings
+
+struct MLBDivision {
+    let id: Int         // MLB Stats API division ID
+    let name: String    // "AL East", "NL West", etc.
+    let leagueId: Int   // 103 = AL, 104 = NL
+    let geoTier: Int    // 0 = East, 1 = Central, 2 = West
+    let teamIds: [Int]  // in alphabetical name order
+}
+
+let mlbDivisions: [MLBDivision] = [
+    MLBDivision(id: 201, name: "AL East",
+                leagueId: 103, geoTier: 0,
+                teamIds: [110, 111, 147, 139, 141]),  // BAL, BOS, NYY, TB, TOR
+    MLBDivision(id: 202, name: "AL Central",
+                leagueId: 103, geoTier: 1,
+                teamIds: [145, 114, 116, 118, 142]),  // CWS, CLE, DET, KC, MIN
+    MLBDivision(id: 200, name: "AL West",
+                leagueId: 103, geoTier: 2,
+                teamIds: [108, 133, 117, 136, 140]),  // LAA, ATH, HOU, SEA, TEX
+    MLBDivision(id: 204, name: "NL East",
+                leagueId: 104, geoTier: 0,
+                teamIds: [144, 146, 121, 143, 120]),  // ATL, MIA, NYM, PHI, WSH
+    MLBDivision(id: 205, name: "NL Central",
+                leagueId: 104, geoTier: 1,
+                teamIds: [112, 113, 158, 134, 138]),  // CHC, CIN, MIL, PIT, STL
+    MLBDivision(id: 203, name: "NL West",
+                leagueId: 104, geoTier: 2,
+                teamIds: [109, 115, 119, 135, 137]),  // ARI, COL, LAD, SD, SF
+]
+
+/// teamId → full display name (e.g. "New York Yankees").
+/// Returns "Unknown Team" for unrecognised IDs — callers don't crash.
+func teamName(for teamId: Int) -> String {
+    let table: [Int: String] = [
+        108: "Los Angeles Angels",
+        109: "Arizona Diamondbacks",
+        110: "Baltimore Orioles",
+        111: "Boston Red Sox",
+        112: "Chicago Cubs",
+        113: "Cincinnati Reds",
+        114: "Cleveland Guardians",
+        115: "Colorado Rockies",
+        116: "Detroit Tigers",
+        117: "Houston Astros",
+        118: "Kansas City Royals",
+        119: "Los Angeles Dodgers",
+        120: "Washington Nationals",
+        121: "New York Mets",
+        133: "Athletics",
+        134: "Pittsburgh Pirates",
+        135: "San Diego Padres",
+        136: "Seattle Mariners",
+        137: "San Francisco Giants",
+        138: "St. Louis Cardinals",
+        139: "Tampa Bay Rays",
+        140: "Texas Rangers",
+        141: "Toronto Blue Jays",
+        142: "Minnesota Twins",
+        143: "Philadelphia Phillies",
+        144: "Atlanta Braves",
+        145: "Chicago White Sox",
+        146: "Miami Marlins",
+        147: "New York Yankees",
+        158: "Milwaukee Brewers",
+    ]
+    return table[teamId] ?? "Unknown Team"
+}
+
+/// teamId → (wins, losses). Populated by fetchStandings.
+typealias TeamRecords = [Int: (wins: Int, losses: Int)]
+
+/// Returns the 6 divisions ordered for the Change Team submenu:
+/// the selected team's division first, then same-league divisions by geoTier,
+/// then other-league divisions with the matching geoTier first.
+func orderedDivisions(for teamId: Int) -> [MLBDivision] {
+    guard let myDiv = mlbDivisions.first(where: { $0.teamIds.contains(teamId) }) else {
+        return mlbDivisions  // fallback: original order for unknown teamId
+    }
+    let myLeague    = myDiv.leagueId
+    let otherLeague = myLeague == 103 ? 104 : 103
+
+    // Same-league: selected division first, then remaining by geoTier ascending.
+    // Guard against self-comparison to preserve strict weak ordering.
+    let sameLeague = mlbDivisions
+        .filter { $0.leagueId == myLeague }
+        .sorted {
+            if $0.id == myDiv.id && $1.id != myDiv.id { return true }
+            if $1.id == myDiv.id && $0.id != myDiv.id { return false }
+            return $0.geoTier < $1.geoTier
+        }
+
+    // Other-league: same geoTier as selected division first, then remaining ascending.
+    let otherLeagueDivs = mlbDivisions
+        .filter { $0.leagueId == otherLeague }
+        .sorted {
+            if $0.geoTier == myDiv.geoTier && $1.geoTier != myDiv.geoTier { return true }
+            if $1.geoTier == myDiv.geoTier && $0.geoTier != myDiv.geoTier { return false }
+            return $0.geoTier < $1.geoTier
+        }
+
+    return sameLeague + otherLeagueDivs
+}

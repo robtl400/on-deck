@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let fetcher = GameFetcher()
     private var timer: Timer?
     private var teamMenuItems: [NSMenuItem] = []
+    private var changeTeamMenuItem: NSMenuItem!
+    private var latestStandings: TeamRecords?
 
     // Error resilience: only show .error state after 3 consecutive failures.
     private var consecutiveFailures = 0
@@ -43,51 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Change Team submenu — all 30 MLB teams, alphabetical.
-        let changeTeamItem = NSMenuItem(title: "Change Team", action: nil, keyEquivalent: "")
-        let teamSubmenu = NSMenu()
-        let allTeams: [(name: String, id: Int)] = [
-            ("Arizona Diamondbacks", 109),
-            ("Atlanta Braves",       144),
-            ("Athletics",            133),
-            ("Baltimore Orioles",    110),
-            ("Boston Red Sox",       111),
-            ("Chicago Cubs",         112),
-            ("Chicago White Sox",    145),
-            ("Cincinnati Reds",      113),
-            ("Cleveland Guardians",  114),
-            ("Colorado Rockies",     115),
-            ("Detroit Tigers",       116),
-            ("Houston Astros",       117),
-            ("Kansas City Royals",   118),
-            ("Los Angeles Angels",   108),
-            ("Los Angeles Dodgers",  119),
-            ("Miami Marlins",        146),
-            ("Milwaukee Brewers",    158),
-            ("Minnesota Twins",      142),
-            ("New York Mets",        121),
-            ("New York Yankees",     147),
-            ("Philadelphia Phillies",143),
-            ("Pittsburgh Pirates",   134),
-            ("San Diego Padres",     135),
-            ("San Francisco Giants", 137),
-            ("Seattle Mariners",     136),
-            ("St. Louis Cardinals",  138),
-            ("Tampa Bay Rays",       139),
-            ("Texas Rangers",        140),
-            ("Toronto Blue Jays",    141),
-            ("Washington Nationals", 120),
-        ]
-        for (name, id) in allTeams {
-            let item = NSMenuItem(title: name, action: #selector(selectTeam(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = id
-            item.state = (id == selectedTeamId) ? .on : .off
-            teamSubmenu.addItem(item)
-            teamMenuItems.append(item)
-        }
-        changeTeamItem.submenu = teamSubmenu
-        menu.addItem(changeTeamItem)
+        // Change Team submenu — divisions with standings
+        changeTeamMenuItem = NSMenuItem(title: "Change Team", action: nil, keyEquivalent: "")
+        buildTeamSubmenu(standings: nil)   // immediate: logos + names, no records yet
+        menu.addItem(changeTeamMenuItem)
+        fetchAndRebuildStandings()
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
@@ -105,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Re-sync immediately when the Mac wakes from sleep (timer drift).
         NSWorkspace.shared.notificationCenter.addObserver(
-            self, selector: #selector(refresh),
+            self, selector: #selector(handleWake),
             name: NSWorkspace.didWakeNotification, object: nil)
 
         NSLog("🔄 Starting initial refresh...")
@@ -118,10 +80,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newId = sender.tag
         guard newId != selectedTeamId else { return }
 
-        // Update checkmark state.
-        teamMenuItems.forEach { $0.state = .off }
-        sender.state = .on
-
         // Persist + propagate to fetcher (didSet clears activeGamePk so the next
         // poll does a fresh schedule lookup for the new team).
         selectedTeamId = newId
@@ -130,10 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Show new team's logo immediately; don't let a stale score linger (OV-8).
         statusItem.button?.attributedTitle = makeTeamPlaceholder(for: newId)
 
+        // Rebuild submenu around the new selected team (handles checkmarks + division order).
+        buildTeamSubmenu(standings: latestStandings)
+
         refresh()
     }
 
     // MARK: - Polling
+
+    @objc func handleWake() {
+        refresh()
+        fetchAndRebuildStandings()
+    }
 
     @objc func refresh() {
         timer?.invalidate()
@@ -161,6 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.consecutiveFailures = 0
                     self.apply(state: state)
                     self.scheduleNextRefresh(for: state)
+
+                    // Re-fetch standings when a game ends — the W-L record just changed.
+                    if case .final_ = state {
+                        self.fetchAndRebuildStandings()
+                    }
                 }
             }
         }
@@ -193,6 +164,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Change Team submenu
+
+    private func buildTeamSubmenu(standings: TeamRecords?) {
+        let submenu = NSMenu()
+        teamMenuItems.removeAll()
+
+        for division in orderedDivisions(for: selectedTeamId) {
+            // Division header — disabled, no action
+            let header = NSMenuItem(title: division.name, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            submenu.addItem(header)
+
+            // Sort teams by win% descending.
+            // If standings is nil or a team is missing, return false (stable fallback =
+            // alphabetical per the teamIds ordering in mlbDivisions).
+            // max(1, games) prevents ÷0 when all teams are 0-0.
+            let sorted = division.teamIds.sorted { a, b in
+                guard let ra = standings?[a], let rb = standings?[b] else { return false }
+                let wpA = Double(ra.wins) / Double(max(1, ra.wins + ra.losses))
+                let wpB = Double(rb.wins) / Double(max(1, rb.wins + rb.losses))
+                return wpA > wpB
+            }
+
+            for teamId in sorted {
+                let name = teamName(for: teamId)
+                let recordStr: String
+                if let r = standings?[teamId] {
+                    recordStr = " (\(r.wins)-\(r.losses))"
+                } else {
+                    recordStr = ""
+                }
+
+                let item = NSMenuItem(title: "\(name)\(recordStr)",
+                                      action: #selector(selectTeam(_:)),
+                                      keyEquivalent: "")
+                item.target = self
+                item.tag = teamId
+                item.state = (teamId == selectedTeamId) ? .on : .off
+                if let img = logoImage(for: teamId, size: NSSize(width: 16, height: 16)) {
+                    item.image = img
+                }
+                submenu.addItem(item)
+                teamMenuItems.append(item)
+            }
+            submenu.addItem(.separator())
+        }
+
+        // Remove the trailing separator after the last division
+        if let last = submenu.items.last, last.isSeparatorItem {
+            submenu.removeItem(last)
+        }
+
+        changeTeamMenuItem.submenu = submenu
+    }
+
+    private func currentSeason() -> Int {
+        Calendar.current.component(.year, from: Date())
+    }
+
+    private func fetchAndRebuildStandings() {
+        fetcher.fetchStandings(season: currentSeason()) { [weak self] result in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                if case .success(let records) = result {
+                    self.latestStandings = records
+                    self.buildTeamSubmenu(standings: records)
+                }
+                // On failure: keep existing latestStandings (stale data > no data)
+            }
+        }
+    }
+
     // MARK: - Display
 
     private func apply(state: GameState) {
@@ -201,13 +244,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Loads a team logo from Assets.xcassets at 18pt.
     /// Returns nil if the asset is missing; callers fall back to text-only display.
-    private func logoImage(for teamId: Int) -> NSImage? {
+    private func logoImage(for teamId: Int, size: NSSize = NSSize(width: 18, height: 18)) -> NSImage? {
         let code = espnCode(for: teamId)
         guard let img = NSImage(named: "logo-\(code)") else { return nil }
         let copy = img.copy() as! NSImage  // don't mutate the shared NSImage cache
         copy.isTemplate = false
-        copy.size = NSSize(width: 18, height: 18)
-
+        copy.size = size
         return copy
     }
 

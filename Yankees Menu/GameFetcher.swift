@@ -158,6 +158,26 @@ final class GameFetcher {
         }
     }
 
+    /// Fetches current standings for all 30 teams.
+    /// Calls completion on an arbitrary background queue.
+    func fetchStandings(season: Int, completion: @escaping (Result<TeamRecords, Error>) -> Void) {
+        let url = URL(string: "\(baseURL)/api/v1/standings?leagueId=103,104&season=\(season)")!
+        fetch(url: url, as: StandingsResponse.self) { result in
+            switch result {
+            case .failure(let e):
+                completion(.failure(e))
+            case .success(let response):
+                var records: TeamRecords = [:]
+                for divRecord in response.records {
+                    for teamRecord in divRecord.teamRecords {
+                        records[teamRecord.team.id] = (teamRecord.wins, teamRecord.losses)
+                    }
+                }
+                completion(.success(records))
+            }
+        }
+    }
+
     // MARK: - Private helpers
 
     private func resolveState(from game: ScheduleGame, completion: @escaping (GameState) -> Void) {
@@ -267,7 +287,8 @@ final class GameFetcher {
         }
     }
 
-    // Returns today as "YYYY-MM-DD" in Eastern Time, matching MLB's officialDate field.
+    // Returns today as "YYYY-MM-DD" in local system time, for consistent
+    // today/tomorrow boundary logic with the display layer.
     private func todayOfficialDate() -> String {
         Self.officialDateFormatter.string(from: Date())
     }
@@ -275,7 +296,7 @@ final class GameFetcher {
     private static let officialDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone(identifier: "America/New_York")!
+        f.timeZone = TimeZone.current
         return f
     }()
 
@@ -297,6 +318,17 @@ final class GameFetcher {
         } else {
             return (game.teams.away.team.name, game.teams.away.team.id, true)
         }
+    }
+
+    // MARK: - Standings decodables
+
+    private struct StandingsResponse: Decodable { let records: [DivisionRecord] }
+    private struct DivisionRecord:    Decodable { let teamRecords: [StandingTeamRecord] }
+    private struct StandingTeamRecord: Decodable {
+        struct TeamRef: Decodable { let id: Int }
+        let team: TeamRef
+        let wins: Int
+        let losses: Int
     }
 
     // MARK: - Generic JSON fetch
