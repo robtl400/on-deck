@@ -184,7 +184,19 @@ final class StandingsViewController: NSViewController {
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        for division in divisions {
+        for (i, division) in divisions.enumerated() {
+            // 1pt separator before every division except the first
+            if i > 0 {
+                let sep = NSView()
+                sep.wantsLayer = true
+                sep.layer?.backgroundColor = NSColor.separatorColor.cgColor
+                stack.addArrangedSubview(sep)
+                NSLayoutConstraint.activate([
+                    sep.widthAnchor.constraint(equalToConstant: 279),
+                    sep.heightAnchor.constraint(equalToConstant: 1),
+                ])
+            }
+
             // Division header (28pt: 8pt top padding + 20pt content)
             let headerView = makeDivisionHeader(division.name)
             stack.addArrangedSubview(headerView)
