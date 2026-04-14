@@ -44,6 +44,9 @@ final class StandingsViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Cover the NSPopover's default vibrant/translucent material with a solid background.
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         buildLayout()
     }
 
