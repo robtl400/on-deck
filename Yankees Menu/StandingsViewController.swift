@@ -197,8 +197,8 @@ final class StandingsViewController: NSViewController {
                 ])
             }
 
-            // Division header (28pt: 8pt top padding + 20pt content)
-            let headerView = makeDivisionHeader(division.name)
+            // Division header (28pt standard; 14pt for first — no top-padding needed)
+            let headerView = makeDivisionHeader(division.name, isFirst: i == 0)
             stack.addArrangedSubview(headerView)
             NSLayoutConstraint.activate([
                 headerView.widthAnchor.constraint(equalToConstant: 279),
@@ -244,9 +244,9 @@ final class StandingsViewController: NSViewController {
         return scroll
     }
 
-    // MARK: - Division header view (28pt)
+    // MARK: - Division header view
 
-    private func makeDivisionHeader(_ name: String) -> NSView {
+    private func makeDivisionHeader(_ name: String, isFirst: Bool = false) -> NSView {
         let container = NSView()
 
         let label = NSTextField(labelWithString: "")
@@ -259,8 +259,10 @@ final class StandingsViewController: NSViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
+        // First division needs no top gap (nothing above it). Others use 28pt for
+        // visual separation from the previous division's team rows.
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 28),
+            container.heightAnchor.constraint(equalToConstant: isFirst ? 14 : 28),
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
         ])
