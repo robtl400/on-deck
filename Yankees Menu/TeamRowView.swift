@@ -17,11 +17,16 @@ final class TeamRowView: NSView {
 
     // MARK: - Subviews
 
-    private let rankLabel      = NSTextField(labelWithString: "")
-    private let logoView       = NSImageView()
-    private let nameLabel      = NSTextField(labelWithString: "")
-    private let gameInfoLabel  = NSTextField(labelWithString: "—")
-    private let recordLabel    = NSTextField(labelWithString: "—")
+    private let rankLabel     = NSTextField(labelWithString: "")
+    private let logoView      = NSImageView()
+    private let nameLabel     = NSTextField(labelWithString: "")
+    private let gameInfoLabel = NSTextField(labelWithString: "")
+    private let winsLabel     = NSTextField(labelWithString: "")
+    private let dashLabel     = NSTextField(labelWithString: "")
+    private let lossesLabel   = NSTextField(labelWithString: "")
+
+    // Stored so setGameStatus can collapse/expand the game info column.
+    private var gameInfoWidthConstraint: NSLayoutConstraint?
 
     private var nameFont: NSFont {
         isSelected
@@ -58,29 +63,47 @@ final class TeamRowView: NSView {
         gameInfoLabel.textColor = .secondaryLabelColor
         gameInfoLabel.alignment = .right
 
-        // Record
-        recordLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        recordLabel.textColor = .secondaryLabelColor
-        recordLabel.alignment = .right
+        // Wins / dash / losses (record, split into three fixed-width labels so
+        // the "–" separator always sits at the same X position regardless of
+        // whether win/loss counts are single- or double-digit).
+        winsLabel.font   = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        winsLabel.textColor = .secondaryLabelColor
+        winsLabel.alignment = .right
 
-        for field in [rankLabel, nameLabel, gameInfoLabel, recordLabel] {
+        dashLabel.font   = NSFont.systemFont(ofSize: 11)
+        dashLabel.textColor = .secondaryLabelColor
+        dashLabel.alignment = .center
+
+        lossesLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        lossesLabel.textColor = .secondaryLabelColor
+        lossesLabel.alignment = .left
+
+        for field in [rankLabel, nameLabel, gameInfoLabel, winsLabel, dashLabel, lossesLabel] {
             field.isEditable = false
             field.isSelectable = false
             field.isBordered = false
             field.drawsBackground = false
         }
 
-        for v in [rankLabel, logoView, nameLabel, gameInfoLabel, recordLabel] as [NSView] {
+        for v in [rankLabel, logoView, nameLabel, gameInfoLabel,
+                  winsLabel, dashLabel, lossesLabel] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
 
-        // Layout (column width = 280pt)
-        // rank: 8 leading, 18 wide
-        // logo: 4 gap, 16 wide
-        // name: 4 gap, flexible (up to game info)
-        // gameInfo: 90 wide, 6 gap before record
-        // record: 38 wide, 8 trailing
+        // Layout (column width = 279pt)
+        // rank:     8pt leading, 18pt wide
+        // logo:     4pt gap, 16pt wide
+        // name:     4pt gap, flexible up to gameInfo
+        // gameInfo: trailing pinned to wins.leading – 6; width = 0 when no game, 90 otherwise
+        // wins:     18pt, right-aligned  ─┐
+        // dash:      8pt, centered        ├─ record area 44pt, dash always at same X
+        // losses:   18pt, left-aligned  ──┘
+        // margin:   8pt trailing
+
+        let gameInfoWidth = gameInfoLabel.widthAnchor.constraint(equalToConstant: 0)
+        gameInfoWidthConstraint = gameInfoWidth
+
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 24),
 
@@ -97,13 +120,21 @@ final class TeamRowView: NSView {
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: gameInfoLabel.leadingAnchor, constant: -4),
 
-            gameInfoLabel.trailingAnchor.constraint(equalTo: recordLabel.leadingAnchor, constant: -6),
+            gameInfoLabel.trailingAnchor.constraint(equalTo: winsLabel.leadingAnchor, constant: -6),
             gameInfoLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            gameInfoLabel.widthAnchor.constraint(equalToConstant: 90),
+            gameInfoWidth,
 
-            recordLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            recordLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            recordLabel.widthAnchor.constraint(equalToConstant: 38),
+            winsLabel.trailingAnchor.constraint(equalTo: dashLabel.leadingAnchor),
+            winsLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            winsLabel.widthAnchor.constraint(equalToConstant: 18),
+
+            dashLabel.trailingAnchor.constraint(equalTo: lossesLabel.leadingAnchor),
+            dashLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            dashLabel.widthAnchor.constraint(equalToConstant: 8),
+
+            lossesLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            lossesLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            lossesLabel.widthAnchor.constraint(equalToConstant: 18),
         ])
     }
 
@@ -123,15 +154,31 @@ final class TeamRowView: NSView {
 
     func setRecord(_ record: (wins: Int, losses: Int)?) {
         if let r = record {
-            recordLabel.stringValue = "\(r.wins)-\(r.losses)"
-            recordLabel.textColor = .secondaryLabelColor
+            winsLabel.stringValue   = "\(r.wins)"
+            dashLabel.stringValue   = "–"
+            lossesLabel.stringValue = "\(r.losses)"
+            winsLabel.textColor   = .secondaryLabelColor
+            dashLabel.textColor   = .secondaryLabelColor
+            lossesLabel.textColor = .secondaryLabelColor
         } else {
-            recordLabel.stringValue = "—"
-            recordLabel.textColor = .tertiaryLabelColor
+            winsLabel.stringValue   = "—"
+            dashLabel.stringValue   = ""
+            lossesLabel.stringValue = ""
+            winsLabel.textColor   = .tertiaryLabelColor
         }
     }
 
     func setGameStatus(_ status: TodayGameStatus) {
+        if case .noGame = status {
+            // Collapse the game info column entirely — gives name label full room.
+            gameInfoLabel.isHidden = true
+            gameInfoWidthConstraint?.constant = 0
+            return
+        }
+
+        gameInfoLabel.isHidden = false
+        gameInfoWidthConstraint?.constant = 90
+
         let str = gameInfoString(for: status)
         if case .live = status, str.hasPrefix("●") {
             // Color the live bullet green, rest in secondaryLabelColor
