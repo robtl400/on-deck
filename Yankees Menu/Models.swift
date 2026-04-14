@@ -220,6 +220,44 @@ func logoImage(for teamId: Int, size: NSSize = NSSize(width: 18, height: 18)) ->
     return copy
 }
 
+/// teamId → team nickname only (e.g. "Orioles", "Yankees").
+/// Used in the standings popover where the logo already supplies city context.
+func teamNickname(for teamId: Int) -> String {
+    let table: [Int: String] = [
+        108: "Angels",
+        109: "Diamondbacks",
+        110: "Orioles",
+        111: "Red Sox",
+        112: "Cubs",
+        113: "Reds",
+        114: "Guardians",
+        115: "Rockies",
+        116: "Tigers",
+        117: "Astros",
+        118: "Royals",
+        119: "Dodgers",
+        120: "Nationals",
+        121: "Mets",
+        133: "Athletics",
+        134: "Pirates",
+        135: "Padres",
+        136: "Mariners",
+        137: "Giants",
+        138: "Cardinals",
+        139: "Rays",
+        140: "Rangers",
+        141: "Blue Jays",
+        142: "Twins",
+        143: "Phillies",
+        144: "Braves",
+        145: "White Sox",
+        146: "Marlins",
+        147: "Yankees",
+        158: "Brewers",
+    ]
+    return table[teamId] ?? teamName(for: teamId)
+}
+
 // MARK: - Standings sort helpers
 
 /// Returns teamIds in the given division sorted by win percentage descending.

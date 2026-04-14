@@ -260,7 +260,7 @@ final class StandingsViewController: NSViewController {
 
     private func makeTeamRow(teamId: Int, rank: Int) -> TeamRowView {
         let row = TeamRowView(teamId: teamId)
-        row.setName(teamName(for: teamId))
+        row.setName(teamNickname(for: teamId))
         row.setLogo(logoImage(for: teamId, size: NSSize(width: 16, height: 16)))
         row.isSelected = (teamId == selectedTeamId)
 
