@@ -54,11 +54,17 @@ final class StandingsViewController: NSViewController {
 
     private func buildLayout() {
         let headerHeight: CGFloat = 32
+        let colHeaderHeight: CGFloat = 18
 
         // ── Header bar ──────────────────────────────────────────────────
         let header = makeHeaderBar()
         header.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(header)
+
+        // ── Column header bar (W / L labels) ────────────────────────────
+        let colHeader = makeColumnHeaderBar()
+        colHeader.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(colHeader)
 
         // ── Vertical divider between columns ────────────────────────────
         let divider = NSView()
@@ -85,8 +91,14 @@ final class StandingsViewController: NSViewController {
             header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: headerHeight),
 
-            // Left scroll
-            leftScroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+            // Column header (W / L)
+            colHeader.topAnchor.constraint(equalTo: header.bottomAnchor),
+            colHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            colHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            colHeader.heightAnchor.constraint(equalToConstant: colHeaderHeight),
+
+            // Left scroll — starts below column header
+            leftScroll.topAnchor.constraint(equalTo: colHeader.bottomAnchor),
             leftScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             leftScroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             leftScroll.widthAnchor.constraint(equalToConstant: 280),
@@ -98,11 +110,74 @@ final class StandingsViewController: NSViewController {
             divider.widthAnchor.constraint(equalToConstant: 1),
 
             // Right scroll
-            rightScroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+            rightScroll.topAnchor.constraint(equalTo: colHeader.bottomAnchor),
             rightScroll.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
             rightScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             rightScroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    // MARK: - Column header bar (W / L)
+
+    private func makeColumnHeaderBar() -> NSView {
+        let bar = NSView()
+        bar.wantsLayer = true
+
+        // Record area per 279pt column (matches TeamRowView layout):
+        //   winsLabel:   leading 227, width 18, trailing 245
+        //   dashLabel:   leading 245, width  8, trailing 253
+        //   lossesLabel: leading 253, width 18, trailing 271
+        //
+        // For the NL column the same offsets apply relative to its leading edge (281pt).
+
+        func makeRecordHeaders(columnLeading: CGFloat) -> [NSView] {
+            let font = NSFont.systemFont(ofSize: 9, weight: .semibold)
+            let color = NSColor.tertiaryLabelColor
+
+            let w = NSTextField(labelWithString: "W")
+            w.font = font; w.textColor = color; w.alignment = .right
+
+            let l = NSTextField(labelWithString: "L")
+            l.font = font; l.textColor = color; l.alignment = .left
+
+            for label in [w, l] {
+                label.isEditable = false; label.isSelectable = false
+                label.isBordered = false; label.drawsBackground = false
+                label.translatesAutoresizingMaskIntoConstraints = false
+                bar.addSubview(label)
+            }
+
+            NSLayoutConstraint.activate([
+                // "W" centered over winsLabel (227–245 in column coords)
+                w.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: columnLeading + 227),
+                w.widthAnchor.constraint(equalToConstant: 18),
+                w.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+
+                // "L" centered over lossesLabel (253–271 in column coords)
+                l.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: columnLeading + 253),
+                l.widthAnchor.constraint(equalToConstant: 18),
+                l.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            ])
+            return [w, l]
+        }
+
+        _ = makeRecordHeaders(columnLeading: 0)    // AL column
+        _ = makeRecordHeaders(columnLeading: 281)  // NL column (after 280pt + 1pt divider)
+
+        // 1pt bottom border
+        let border = NSView()
+        border.wantsLayer = true
+        border.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        border.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(border)
+        NSLayoutConstraint.activate([
+            border.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            border.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            border.heightAnchor.constraint(equalToConstant: 1),
+        ])
+
+        return bar
     }
 
     // MARK: - Header bar (32pt)
