@@ -33,7 +33,7 @@ final class TeamRowView: NSView {
 
     init(teamId: Int) {
         self.teamId = teamId
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 22))
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         setup()
     }
 
@@ -82,7 +82,7 @@ final class TeamRowView: NSView {
         // gameInfo: 90 wide, 6 gap before record
         // record: 38 wide, 8 trailing
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 22),
+            heightAnchor.constraint(equalToConstant: 24),
 
             rankLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             rankLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
