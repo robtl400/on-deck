@@ -6,9 +6,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let fetcher = GameFetcher()
     private var timer: Timer?
-    private var teamMenuItems: [NSMenuItem] = []
-    private var changeTeamMenuItem: NSMenuItem!
     private var latestStandings: TeamRecords?
+
+    // Popover state
+    private var popover: NSPopover?
+    private var standingsVC: StandingsViewController?
+    private var latestTodayGames: [Int: TodayGameStatus]?
+    private var latestTodayGamesTimestamp: Date?
+    private var todayGamesTimer: Timer?
 
     // Error resilience: only show .error state after 3 consecutive failures.
     private var consecutiveFailures = 0
@@ -28,42 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.setActivationPolicy(.accessory)
         NSLog("📱 Activation policy set to accessory")
-        NSLog("📱 Creating status item...")
-        NSLog("🔍 Status item: \(statusItem)")
-        NSLog("🔍 Status item button: \(String(describing: statusItem.button))")
 
-        if statusItem.button == nil {
-            NSLog("❌ Status item button is nil! This shouldn't happen...")
-        }
-
-        // Set the fetcher team and show the stored team's logo before the first
-        // fetch returns, so no team ever sees "NYY" flash on launch (OV-6).
+        // Show the stored team's logo before the first fetch returns.
         fetcher.teamId = selectedTeamId
         statusItem.button?.attributedTitle = makeTeamPlaceholder(for: selectedTeamId)
         NSLog("✅ Status item initialised for teamId: \(selectedTeamId)")
-        NSLog("📍 Status item isVisible: \(statusItem.isVisible)")
 
-        let menu = NSMenu()
+        // Wire up popover toggle — do NOT set statusItem.menu (would intercept clicks).
+        statusItem.button?.action = #selector(togglePopover(_:))
+        statusItem.button?.target = self
 
-        // Change Team submenu — divisions with standings
-        changeTeamMenuItem = NSMenuItem(title: "Change Team", action: nil, keyEquivalent: "")
-        buildTeamSubmenu(standings: nil)   // immediate: logos + names, no records yet
-        menu.addItem(changeTeamMenuItem)
+        // Kick off initial data fetches.
         fetchAndRebuildStandings()
-        menu.addItem(.separator())
-
-        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
-        refreshItem.target = self
-        menu.addItem(refreshItem)
-
-        let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        loginItem.target = self
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(loginItem)
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Yankees Menu Bar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        statusItem.menu = menu
-        NSLog("🍔 Menu created with \(menu.items.count) items")
 
         // Re-sync immediately when the Mac wakes from sleep (timer drift).
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -74,22 +55,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refresh()
     }
 
+    // MARK: - Popover
+
+    @objc func togglePopover(_ sender: NSStatusBarButton) {
+        if let pop = popover, pop.isShown {
+            pop.performClose(sender)
+        } else {
+            openPopover(sender)
+        }
+    }
+
+    private func openPopover(_ sender: NSStatusBarButton) {
+        let vc = StandingsViewController(
+            selectedTeamId: selectedTeamId,
+            standings: latestStandings,
+            games: latestTodayGames,
+            settingsMenu: buildSettingsMenu()
+        )
+        vc.onSelectTeam = { [weak self] teamId in
+            self?.selectTeam(teamId: teamId)
+        }
+
+        let pop = NSPopover()
+        pop.contentViewController = vc
+        pop.behavior = .transient
+        pop.delegate = self
+        pop.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+
+        popover = pop
+        standingsVC = vc
+
+        // Live-refresh timer: fires every 30s while popover is open.
+        todayGamesTimer?.invalidate()
+        todayGamesTimer = Timer.scheduledTimer(timeInterval: 30, target: self,
+                                               selector: #selector(fetchAndUpdateTodayGames),
+                                               userInfo: nil, repeats: true)
+
+        // Fetch fresh games if nil or stale (>= 60s old).
+        let isStale = latestTodayGamesTimestamp.map { Date().timeIntervalSince($0) >= 60 } ?? true
+        if isStale { fetchAndUpdateTodayGames() }
+    }
+
+    // MARK: - Settings menu
+
+    private func buildSettingsMenu() -> NSMenu {
+        let m = NSMenu()
+
+        let loginItem = NSMenuItem(title: "Launch at Login",
+                                   action: #selector(toggleLaunchAtLogin(_:)),
+                                   keyEquivalent: "")
+        loginItem.target = self
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        m.addItem(loginItem)
+
+        m.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit Yankees Menu Bar",
+                                  action: #selector(NSApplication.terminate(_:)),
+                                  keyEquivalent: "q")
+        m.addItem(quitItem)
+
+        return m
+    }
+
     // MARK: - Team Selection
 
-    @objc func selectTeam(_ sender: NSMenuItem) {
-        let newId = sender.tag
+    func selectTeam(teamId newId: Int) {
         guard newId != selectedTeamId else { return }
+        defer { popover?.performClose(nil) }
 
-        // Persist + propagate to fetcher (didSet clears activeGamePk so the next
-        // poll does a fresh schedule lookup for the new team).
         selectedTeamId = newId
         fetcher.teamId = newId
 
-        // Show new team's logo immediately; don't let a stale score linger (OV-8).
+        // Show new team's logo immediately; don't let a stale score linger.
         statusItem.button?.attributedTitle = makeTeamPlaceholder(for: newId)
-
-        // Rebuild submenu around the new selected team (handles checkmarks + division order).
-        buildTeamSubmenu(standings: latestStandings)
 
         refresh()
     }
@@ -111,11 +150,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if case .error = state {
                     self.consecutiveFailures += 1
                     if self.consecutiveFailures < 3 {
-                        // Keep displaying last known state; schedule retry at normal interval.
                         self.scheduleNextRefresh(for: state)
                         return
                     }
-                    // After 3+ failures, append stale indicator to current attributed title.
                     if let current = self.statusItem.button?.attributedTitle,
                        !current.string.hasSuffix(" ·?") {
                         let mutable = NSMutableAttributedString(attributedString: current)
@@ -128,7 +165,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.apply(state: state)
                     self.scheduleNextRefresh(for: state)
 
-                    // Re-fetch standings when a game ends — the W-L record just changed.
                     if case .final_ = state {
                         self.fetchAndRebuildStandings()
                     }
@@ -164,60 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Change Team submenu
-
-    private func buildTeamSubmenu(standings: TeamRecords?) {
-        let submenu = NSMenu()
-        teamMenuItems.removeAll()
-
-        for division in orderedDivisions(for: selectedTeamId) {
-            // Division header — disabled, no action
-            let header = NSMenuItem(title: division.name, action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            submenu.addItem(header)
-
-            // Sort teams by win% descending.
-            // If standings is nil or a team is missing, return false (stable fallback =
-            // alphabetical per the teamIds ordering in mlbDivisions).
-            // max(1, games) prevents ÷0 when all teams are 0-0.
-            let sorted = division.teamIds.sorted { a, b in
-                guard let ra = standings?[a], let rb = standings?[b] else { return false }
-                let wpA = Double(ra.wins) / Double(max(1, ra.wins + ra.losses))
-                let wpB = Double(rb.wins) / Double(max(1, rb.wins + rb.losses))
-                return wpA > wpB
-            }
-
-            for teamId in sorted {
-                let name = teamName(for: teamId)
-                let recordStr: String
-                if let r = standings?[teamId] {
-                    recordStr = " (\(r.wins)-\(r.losses))"
-                } else {
-                    recordStr = ""
-                }
-
-                let item = NSMenuItem(title: "\(name)\(recordStr)",
-                                      action: #selector(selectTeam(_:)),
-                                      keyEquivalent: "")
-                item.target = self
-                item.tag = teamId
-                item.state = (teamId == selectedTeamId) ? .on : .off
-                if let img = logoImage(for: teamId, size: NSSize(width: 16, height: 16)) {
-                    item.image = img
-                }
-                submenu.addItem(item)
-                teamMenuItems.append(item)
-            }
-            submenu.addItem(.separator())
-        }
-
-        // Remove the trailing separator after the last division
-        if let last = submenu.items.last, last.isSeparatorItem {
-            submenu.removeItem(last)
-        }
-
-        changeTeamMenuItem.submenu = submenu
-    }
+    // MARK: - Standings
 
     private func currentSeason() -> Int {
         Calendar.current.component(.year, from: Date())
@@ -229,9 +212,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 if case .success(let records) = result {
                     self.latestStandings = records
-                    self.buildTeamSubmenu(standings: records)
+                    self.standingsVC?.update(standings: records)
                 }
-                // On failure: keep existing latestStandings (stale data > no data)
+            }
+        }
+    }
+
+    // MARK: - Today's games (popover)
+
+    @objc func fetchAndUpdateTodayGames() {
+        fetcher.fetchTodayAllGames { [weak self] games in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                if !games.isEmpty {
+                    self.latestTodayGames = games
+                    self.latestTodayGamesTimestamp = Date()
+                }
+                if let latest = self.latestTodayGames {
+                    self.standingsVC?.update(games: latest)
+                }
             }
         }
     }
@@ -240,17 +239,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func apply(state: GameState) {
         statusItem.button?.attributedTitle = makeAttributedTitle(for: state)
-    }
-
-    /// Loads a team logo from Assets.xcassets at 18pt.
-    /// Returns nil if the asset is missing; callers fall back to text-only display.
-    private func logoImage(for teamId: Int, size: NSSize = NSSize(width: 18, height: 18)) -> NSImage? {
-        let code = espnCode(for: teamId)
-        guard let img = NSImage(named: "logo-\(code)") else { return nil }
-        let copy = img.copy() as! NSImage  // don't mutate the shared NSImage cache
-        copy.isTemplate = false
-        copy.size = size
-        return copy
     }
 
     /// Composites an image over a dark rounded-rect background.
@@ -293,12 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     */
     private static let yankeeBlue = NSColor(red: 12/255, green: 35/255, blue: 64/255, alpha: 1)
 
-    /// Text string styled in Yankees navy, regular weight.
     private func blueAtt(_ str: String) -> NSAttributedString {
         NSAttributedString(string: str, attributes: [.foregroundColor: Self.yankeeBlue])
     }
 
-    /// Text string styled in Yankees navy, bold weight.
     private func boldBlueAtt(_ str: String) -> NSAttributedString {
         NSAttributedString(string: str, attributes: [
             .foregroundColor: Self.yankeeBlue,
@@ -306,10 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
     }
 
-    /// Bold navy vertical bar separator.
     private func separatorAtt() -> NSAttributedString { boldBlueAtt("│") }
-
-    /// Bold navy middle dot.
     private func dotAtt() -> NSAttributedString { boldBlueAtt(" · ") }
 
     private func makeAttributedTitle(for state: GameState) -> NSAttributedString {
@@ -403,7 +386,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             s.append(separatorAtt())
 
         case .error:
-            // Never called from apply(state:) — error path is handled in refresh().
             return statusItem.button?.attributedTitle ?? NSAttributedString(string: "—")
         }
 
@@ -411,7 +393,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - Title formatting (pure; used by tests — production display uses makeAttributedTitle(_:))
+// MARK: - NSPopoverDelegate
+
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        todayGamesTimer?.invalidate()
+        todayGamesTimer = nil
+        standingsVC = nil
+        popover = nil
+    }
+}
+
+// MARK: - Title formatting (pure; used by tests)
 
 func makeTitle(for state: GameState, lastKnown: String = "NYY", selectedTeamId: Int = yankeesTeamId) -> String {
     switch state {

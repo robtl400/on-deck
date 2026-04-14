@@ -1,4 +1,4 @@
-import Foundation
+import Cocoa
 
 let yankeesTeamId = 147
 
@@ -167,34 +167,68 @@ func teamName(for teamId: Int) -> String {
 /// teamId → (wins, losses). Populated by fetchStandings.
 typealias TeamRecords = [Int: (wins: Int, losses: Int)]
 
-/// Returns the 6 divisions ordered for the Change Team submenu:
-/// the selected team's division first, then same-league divisions by geoTier,
-/// then other-league divisions with the matching geoTier first.
-func orderedDivisions(for teamId: Int) -> [MLBDivision] {
-    guard let myDiv = mlbDivisions.first(where: { $0.teamIds.contains(teamId) }) else {
-        return mlbDivisions  // fallback: original order for unknown teamId
+// MARK: - Today's game status (per team, for the standings popover)
+
+enum TodayGameStatus {
+    case upcoming(opponentAbbr: String, isHome: Bool, time: Date)
+    case live(opponentAbbr: String, isHome: Bool, myRuns: Int, theirRuns: Int,
+              inning: Int, isTopInning: Bool)
+    case final_(opponentAbbr: String, isHome: Bool, myRuns: Int, theirRuns: Int)
+    case postponed
+    case noGame
+}
+
+// MARK: - Game info string (used by TeamRowView and unit tests)
+
+private let popoverTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "h:mm a"
+    f.timeZone = .current
+    return f
+}()
+
+/// Returns the display string for a team's game info cell (e.g. "● 4–2 ↑5", "vs BOS 7:05 PM").
+func gameInfoString(for status: TodayGameStatus) -> String {
+    switch status {
+    case .upcoming(let opp, let isHome, let time):
+        let prefix = isHome ? "vs" : "@"
+        return "\(prefix) \(opp) \(popoverTimeFormatter.string(from: time))"
+    case .live(_, _, let myRuns, let theirRuns, let inning, let isTop):
+        let arrow = isTop ? "↑" : "↓"
+        return "● \(myRuns)–\(theirRuns) \(arrow)\(inning)"
+    case .final_(_, _, let myRuns, let theirRuns):
+        if myRuns > theirRuns { return "W \(myRuns)–\(theirRuns)" }
+        else if myRuns < theirRuns { return "L \(myRuns)–\(theirRuns)" }
+        else { return "T \(myRuns)–\(theirRuns)" }
+    case .postponed:
+        return "PPD"
+    case .noGame:
+        return "—"
     }
-    let myLeague    = myDiv.leagueId
-    let otherLeague = myLeague == 103 ? 104 : 103
+}
 
-    // Same-league: selected division first, then remaining by geoTier ascending.
-    // Guard against self-comparison to preserve strict weak ordering.
-    let sameLeague = mlbDivisions
-        .filter { $0.leagueId == myLeague }
-        .sorted {
-            if $0.id == myDiv.id && $1.id != myDiv.id { return true }
-            if $1.id == myDiv.id && $0.id != myDiv.id { return false }
-            return $0.geoTier < $1.geoTier
-        }
+// MARK: - Logo image (shared between AppDelegate status bar and standings popover)
 
-    // Other-league: same geoTier as selected division first, then remaining ascending.
-    let otherLeagueDivs = mlbDivisions
-        .filter { $0.leagueId == otherLeague }
-        .sorted {
-            if $0.geoTier == myDiv.geoTier && $1.geoTier != myDiv.geoTier { return true }
-            if $1.geoTier == myDiv.geoTier && $0.geoTier != myDiv.geoTier { return false }
-            return $0.geoTier < $1.geoTier
-        }
+/// Loads a team logo from Assets.xcassets at the given size.
+/// Returns nil if the asset is missing.
+func logoImage(for teamId: Int, size: NSSize = NSSize(width: 18, height: 18)) -> NSImage? {
+    let code = espnCode(for: teamId)
+    guard let img = NSImage(named: "logo-\(code)") else { return nil }
+    let copy = img.copy() as! NSImage
+    copy.isTemplate = false
+    copy.size = size
+    return copy
+}
 
-    return sameLeague + otherLeagueDivs
+// MARK: - Standings sort helpers
+
+/// Returns teamIds in the given division sorted by win percentage descending.
+/// Falls back to stable original order when standings are nil or a team is missing.
+func teamsSortedByWinPct(in division: MLBDivision, standings: TeamRecords?) -> [Int] {
+    division.teamIds.sorted { a, b in
+        guard let ra = standings?[a], let rb = standings?[b] else { return false }
+        let wpA = Double(ra.wins) / Double(max(1, ra.wins + ra.losses))
+        let wpB = Double(rb.wins) / Double(max(1, rb.wins + rb.losses))
+        return wpA > wpB
+    }
 }

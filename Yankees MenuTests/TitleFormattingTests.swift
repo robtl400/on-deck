@@ -129,7 +129,6 @@ final class TitleFormattingTests: XCTestCase {
     // MARK: - Non-Yankees selected team
 
     func testFinalNonYankeesWin() {
-        // Dodgers (119) are home and win — selectedTeamId must drive the W/L label.
         let title = makeTitle(
             for: .final_(awayAbbr: "SF", awayId: 137, awayRuns: 2,
                          homeAbbr: "LAD", homeId: 119, homeRuns: 5),
@@ -138,7 +137,6 @@ final class TitleFormattingTests: XCTestCase {
     }
 
     func testFinalNonYankeesLose() {
-        // Dodgers (119) are away and lose.
         let title = makeTitle(
             for: .final_(awayAbbr: "LAD", awayId: 119, awayRuns: 1,
                          homeAbbr: "SF", homeId: 137, homeRuns: 4),
@@ -147,7 +145,6 @@ final class TitleFormattingTests: XCTestCase {
     }
 
     func testOffSeasonNonYankees() {
-        // Off-season label should reflect the selected team, not always "NYY".
         let title = makeTitle(for: .offSeason, selectedTeamId: 119)
         XCTAssertEqual(title, "LAD · Off Season")
     }
@@ -174,53 +171,9 @@ final class TitleFormattingTests: XCTestCase {
     }
 }
 
-// MARK: - Division standings tests
+// MARK: - Standings data tests
 
 final class DivisionStandingsTests: XCTestCase {
-
-    // MARK: orderedDivisions
-
-    func testNYYDivisionOrder() {
-        // NYY = AL East, geoTier 0
-        // Expected: AL East, AL Central, AL West, NL East, NL Central, NL West
-        let divs = orderedDivisions(for: 147)
-        XCTAssertEqual(divs.map(\.name),
-                       ["AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"])
-    }
-
-    func testSTLDivisionOrder() {
-        // STL = NL Central, geoTier 1
-        // Expected: NL Central, NL East, NL West, AL Central, AL East, AL West
-        let divs = orderedDivisions(for: 138)
-        XCTAssertEqual(divs.map(\.name),
-                       ["NL Central", "NL East", "NL West", "AL Central", "AL East", "AL West"])
-    }
-
-    func testSelectedDivisionAlwaysFirst() {
-        // For any valid teamId, the team's own division must be index 0
-        for division in mlbDivisions {
-            for teamId in division.teamIds {
-                let ordered = orderedDivisions(for: teamId)
-                XCTAssertEqual(ordered[0].id, division.id,
-                    "Expected \(division.name) first for teamId \(teamId), got \(ordered[0].name)")
-            }
-        }
-    }
-
-    func testUnknownTeamIdFallback() {
-        // Unknown teamId returns all 6 divisions in original order
-        let divs = orderedDivisions(for: 0)
-        XCTAssertEqual(divs.count, 6)
-        XCTAssertEqual(divs.map(\.id), mlbDivisions.map(\.id))
-    }
-
-    func testOtherLeagueSameGeoTierFirst() {
-        // HOU = AL West, geoTier 2 → other-league NL West (geoTier 2) should come before NL East (0) and NL Central (1)
-        let divs = orderedDivisions(for: 117)
-        let otherLeague = divs.filter { $0.leagueId == 104 }
-        XCTAssertEqual(otherLeague[0].name, "NL West",
-            "Expected NL West first in other-league for HOU (AL West)")
-    }
 
     // MARK: teamName
 
@@ -231,7 +184,6 @@ final class DivisionStandingsTests: XCTestCase {
     }
 
     func testTeamNameUnknownFallback() {
-        // Unknown id must not crash and must return a non-empty string
         let name = teamName(for: 0)
         XCTAssertFalse(name.isEmpty)
     }
@@ -255,5 +207,279 @@ final class DivisionStandingsTests: XCTestCase {
         XCTAssertEqual(allIds.count, 30, "Expected 30 team IDs across all divisions")
         let unique = Set(allIds)
         XCTAssertEqual(unique.count, 30, "Found duplicate teamIds in mlbDivisions")
+    }
+}
+
+// MARK: - teamsSortedByWinPct tests
+
+final class TeamsSortedByWinPctTests: XCTestCase {
+
+    private let alEast = mlbDivisions.first(where: { $0.name == "AL East" })!
+
+    func testSortsByWinPctDescending() {
+        // NYY 10-5 (.667) should rank above BOS 6-9 (.400)
+        var standings: TeamRecords = [:]
+        standings[147] = (wins: 10, losses: 5)   // NYY
+        standings[111] = (wins: 6,  losses: 9)   // BOS
+        // fill others at 0-0
+        for id in alEast.teamIds where id != 147 && id != 111 {
+            standings[id] = (wins: 0, losses: 0)
+        }
+        let sorted = teamsSortedByWinPct(in: alEast, standings: standings)
+        let nyyIdx = sorted.firstIndex(of: 147)!
+        let bosIdx = sorted.firstIndex(of: 111)!
+        XCTAssertLessThan(nyyIdx, bosIdx, "NYY (.667) should rank above BOS (.400)")
+    }
+
+    func testNilStandingsFallback() {
+        // nil standings → returns original teamIds order (no crash)
+        let sorted = teamsSortedByWinPct(in: alEast, standings: nil)
+        XCTAssertEqual(sorted.count, alEast.teamIds.count)
+        XCTAssertEqual(Set(sorted), Set(alEast.teamIds))
+    }
+
+    func testZeroZeroRecord() {
+        // max(1, 0+0) prevents ÷0 — all teams at 0-0 get equal win% (.000)
+        var standings: TeamRecords = [:]
+        for id in alEast.teamIds { standings[id] = (wins: 0, losses: 0) }
+        let sorted = teamsSortedByWinPct(in: alEast, standings: standings)
+        XCTAssertEqual(sorted.count, 5, "No crash and all 5 teams present")
+    }
+
+    func testTiedWinPct() {
+        // Equal win% → stable sort (no crash, all teams present)
+        var standings: TeamRecords = [:]
+        for id in alEast.teamIds { standings[id] = (wins: 5, losses: 5) }
+        let sorted = teamsSortedByWinPct(in: alEast, standings: standings)
+        XCTAssertEqual(Set(sorted), Set(alEast.teamIds))
+    }
+}
+
+// MARK: - TodayGameStatus display formatting tests
+
+final class GameInfoStringTests: XCTestCase {
+
+    private let futureDate = Date(timeIntervalSince1970: 1775347500)  // approx 7:05 PM ET
+
+    func testLiveStatusFormat() {
+        let s = gameInfoString(for: .live(opponentAbbr: "BOS", isHome: true,
+                                          myRuns: 4, theirRuns: 2,
+                                          inning: 5, isTopInning: true))
+        XCTAssertEqual(s, "● 4–2 ↑5")
+    }
+
+    func testLiveBottomInning() {
+        let s = gameInfoString(for: .live(opponentAbbr: "BOS", isHome: false,
+                                          myRuns: 1, theirRuns: 3,
+                                          inning: 7, isTopInning: false))
+        XCTAssertEqual(s, "● 1–3 ↓7")
+    }
+
+    func testUpcomingHomeFormat() {
+        let s = gameInfoString(for: .upcoming(opponentAbbr: "BOS", isHome: true,
+                                              time: futureDate))
+        XCTAssertTrue(s.hasPrefix("vs BOS "), "Expected 'vs BOS …', got '\(s)'")
+    }
+
+    func testUpcomingAwayFormat() {
+        let s = gameInfoString(for: .upcoming(opponentAbbr: "BOS", isHome: false,
+                                              time: futureDate))
+        XCTAssertTrue(s.hasPrefix("@ BOS "), "Expected '@ BOS …', got '\(s)'")
+    }
+
+    func testFinalWinFormat() {
+        let s = gameInfoString(for: .final_(opponentAbbr: "BOS", isHome: true,
+                                            myRuns: 5, theirRuns: 3))
+        XCTAssertEqual(s, "W 5–3")
+    }
+
+    func testFinalLossFormat() {
+        let s = gameInfoString(for: .final_(opponentAbbr: "BOS", isHome: false,
+                                            myRuns: 3, theirRuns: 5))
+        XCTAssertEqual(s, "L 3–5")
+    }
+
+    func testPostponedFormat() {
+        XCTAssertEqual(gameInfoString(for: .postponed), "PPD")
+    }
+
+    func testNoGameFormat() {
+        XCTAssertEqual(gameInfoString(for: .noGame), "—")
+    }
+}
+
+// MARK: - parseTodayGames JSON parsing tests
+
+final class AllGamesParsingTests: XCTestCase {
+
+    private let fetcher = GameFetcher()
+
+    // Fixture builder helpers
+    private func gameJSON(homeId: Int, homeAbbr: String, homeScore: Int?,
+                          awayId: Int, awayAbbr: String, awayScore: Int?,
+                          abstractState: String, detailedState: String? = nil,
+                          gameDate: String = "2026-04-14T18:10:00Z",
+                          currentInning: Int? = nil, isTopInning: Bool? = nil) -> String {
+        let scoreH = homeScore.map { "\($0)" } ?? "null"
+        let scoreA = awayScore.map { "\($0)" } ?? "null"
+        let detailed = detailedState.map { "\"\($0)\"" } ?? "null"
+        let linescore: String
+        if let inn = currentInning, let top = isTopInning {
+            linescore = "{\"currentInning\":\(inn),\"isTopInning\":\(top)}"
+        } else {
+            linescore = "null"
+        }
+        return """
+        {
+          "gameDate": "\(gameDate)",
+          "status": {"abstractGameState": "\(abstractState)", "detailedState": \(detailed)},
+          "teams": {
+            "home": {"team": {"id": \(homeId), "abbreviation": "\(homeAbbr)"}, "score": \(scoreH)},
+            "away": {"team": {"id": \(awayId), "abbreviation": "\(awayAbbr)"}, "score": \(scoreA)}
+          },
+          "linescore": \(linescore)
+        }
+        """
+    }
+
+    private func scheduleJSON(games: [String]) -> Data {
+        let joined = games.joined(separator: ",")
+        let json = "{\"dates\":[{\"games\":[\(joined)]}]}"
+        return json.data(using: .utf8)!
+    }
+
+    func testParsesPreviousGame() {
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                     awayId: 111, awayAbbr: "BOS", awayScore: nil,
+                     abstractState: "Preview")
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        if case .upcoming(let opp, let isHome, _) = result[147] {
+            XCTAssertEqual(opp, "BOS")
+            XCTAssertTrue(isHome)
+        } else {
+            XCTFail("Expected .upcoming for home team, got \(String(describing: result[147]))")
+        }
+        if case .upcoming(let opp, let isHome, _) = result[111] {
+            XCTAssertEqual(opp, "NYY")
+            XCTAssertFalse(isHome)
+        } else {
+            XCTFail("Expected .upcoming for away team, got \(String(describing: result[111]))")
+        }
+    }
+
+    func testParsesLiveGame() {
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: 4,
+                     awayId: 111, awayAbbr: "BOS", awayScore: 2,
+                     abstractState: "Live",
+                     currentInning: 5, isTopInning: true)
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        if case .live(let opp, let isHome, let my, let their, let inn, let top) = result[147] {
+            XCTAssertEqual(opp, "BOS")
+            XCTAssertTrue(isHome)
+            XCTAssertEqual(my, 4)
+            XCTAssertEqual(their, 2)
+            XCTAssertEqual(inn, 5)
+            XCTAssertTrue(top)
+        } else {
+            XCTFail("Expected .live for NYY, got \(String(describing: result[147]))")
+        }
+        // Away team perspective: myRuns = away score (2), theirRuns = home score (4)
+        if case .live(_, _, let my, let their, _, _) = result[111] {
+            XCTAssertEqual(my, 2)
+            XCTAssertEqual(their, 4)
+        } else {
+            XCTFail("Expected .live for BOS, got \(String(describing: result[111]))")
+        }
+    }
+
+    func testParsesFinalGame() {
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: 5,
+                     awayId: 111, awayAbbr: "BOS", awayScore: 3,
+                     abstractState: "Final")
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        if case .final_(let opp, let isHome, let my, let their) = result[147] {
+            XCTAssertEqual(opp, "BOS")
+            XCTAssertTrue(isHome)
+            XCTAssertEqual(my, 5)
+            XCTAssertEqual(their, 3)
+        } else {
+            XCTFail("Expected .final_ for NYY, got \(String(describing: result[147]))")
+        }
+    }
+
+    func testParsesPostponedGame() {
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                     awayId: 111, awayAbbr: "BOS", awayScore: nil,
+                     abstractState: "Preview", detailedState: "Postponed")
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        if case .postponed = result[147] { } else {
+            XCTFail("Expected .postponed for NYY, got \(String(describing: result[147]))")
+        }
+        if case .postponed = result[111] { } else {
+            XCTFail("Expected .postponed for BOS, got \(String(describing: result[111]))")
+        }
+    }
+
+    func testNoGameForTeam() {
+        // COL (115) absent from schedule → not in dict → caller gets .noGame via nil coalescing
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                     awayId: 111, awayAbbr: "BOS", awayScore: nil,
+                     abstractState: "Preview")
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        XCTAssertNil(result[115], "COL not in schedule — should be absent from dict")
+    }
+
+    func testDoubleheaderPicksEarliest() {
+        // Two games for NYY: first at 13:05 UTC (G1 Preview), second at 19:10 UTC (G2 Preview)
+        let g1 = gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                          awayId: 111, awayAbbr: "BOS", awayScore: nil,
+                          abstractState: "Preview",
+                          gameDate: "2026-04-14T13:05:00Z")
+        let g2 = gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                          awayId: 139, awayAbbr: "TB", awayScore: nil,
+                          abstractState: "Preview",
+                          gameDate: "2026-04-14T19:10:00Z")
+        let data = scheduleJSON(games: [g2, g1])   // intentionally out of order
+        let result = fetcher.parseTodayGames(from: data)
+        // Should pick G1 (earliest) — opponent BOS, not TB
+        if case .upcoming(let opp, _, _) = result[147] {
+            XCTAssertEqual(opp, "BOS", "Should use earliest game (G1 vs BOS)")
+        } else {
+            XCTFail("Expected .upcoming for NYY, got \(String(describing: result[147]))")
+        }
+    }
+
+    func testBothTeamsGetEntry() {
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                     awayId: 111, awayAbbr: "BOS", awayScore: nil,
+                     abstractState: "Preview")
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        XCTAssertNotNil(result[147], "Home team NYY should have an entry")
+        XCTAssertNotNil(result[111], "Away team BOS should have an entry")
+        if case .upcoming(_, let isHome, _) = result[147] {
+            XCTAssertTrue(isHome, "NYY is home — isHome should be true")
+        }
+        if case .upcoming(_, let isHome, _) = result[111] {
+            XCTAssertFalse(isHome, "BOS is away — isHome should be false")
+        }
+    }
+
+    func testErrorReturnsEmptyDict() {
+        // Malformed JSON → parseTodayGames returns [:]
+        let badData = "not json at all".data(using: .utf8)!
+        let result = fetcher.parseTodayGames(from: badData)
+        XCTAssertTrue(result.isEmpty, "Parse failure should return empty dict")
     }
 }

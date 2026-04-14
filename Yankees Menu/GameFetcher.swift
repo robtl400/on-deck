@@ -331,6 +331,106 @@ final class GameFetcher {
         let losses: Int
     }
 
+    // MARK: - All-games schedule (for standings popover)
+
+    /// Fetches today's game status for all 30 teams from the hydrated schedule endpoint.
+    /// Calls completion on a background queue with `[teamId: TodayGameStatus]`.
+    /// On network/parse error, calls completion with an empty dict.
+    func fetchTodayAllGames(date: Date = Date(),
+                            completion: @escaping ([Int: TodayGameStatus]) -> Void) {
+        let dateStr = Self.officialDateFormatter.string(from: date)
+        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&date=\(dateStr)&hydrate=linescore")!
+
+        let task = session.dataTask(with: url) { [weak self] data, _, error in
+            guard let self, error == nil, let data else {
+                completion([:])
+                return
+            }
+            completion(self.parseTodayGames(from: data))
+        }
+        task.resume()
+    }
+
+    /// Parses a hydrated schedule Data payload into a per-team status dict.
+    /// Exposed as `internal` so unit tests can call it with fixture JSON.
+    func parseTodayGames(from data: Data) -> [Int: TodayGameStatus] {
+        guard let response = try? JSONDecoder().decode(AllGamesScheduleResponse.self, from: data) else {
+            return [:]
+        }
+        var result: [Int: TodayGameStatus] = [:]
+        let allGames = response.dates.flatMap { $0.games }
+            .sorted { $0.gameDate < $1.gameDate }   // ascending → first write wins for doubleheaders
+
+        for game in allGames {
+            let homeId   = game.teams.home.team.id
+            let awayId   = game.teams.away.team.id
+            let homeAbbr = game.teams.home.team.abbreviation
+            let awayAbbr = game.teams.away.team.abbreviation
+            let detailed = game.status.detailedState ?? ""
+            let state    = game.status.abstractGameState
+
+            let homeStatus: TodayGameStatus
+            let awayStatus: TodayGameStatus
+
+            if detailed == "Postponed" || detailed.contains("Suspended") {
+                homeStatus = .postponed
+                awayStatus = .postponed
+            } else if state == "Preview" {
+                guard let gameDate = isoFormatter.date(from: game.gameDate) else { continue }
+                homeStatus = .upcoming(opponentAbbr: awayAbbr, isHome: true, time: gameDate)
+                awayStatus = .upcoming(opponentAbbr: homeAbbr, isHome: false, time: gameDate)
+            } else if state == "Live" {
+                let homeRuns = game.teams.home.score ?? 0
+                let awayRuns = game.teams.away.score ?? 0
+                let inning   = game.linescore?.currentInning ?? 1
+                let isTop    = game.linescore?.isTopInning ?? true
+                homeStatus = .live(opponentAbbr: awayAbbr, isHome: true,
+                                   myRuns: homeRuns, theirRuns: awayRuns,
+                                   inning: inning, isTopInning: isTop)
+                awayStatus = .live(opponentAbbr: homeAbbr, isHome: false,
+                                   myRuns: awayRuns, theirRuns: homeRuns,
+                                   inning: inning, isTopInning: isTop)
+            } else if state == "Final" {
+                let homeRuns = game.teams.home.score ?? 0
+                let awayRuns = game.teams.away.score ?? 0
+                homeStatus = .final_(opponentAbbr: awayAbbr, isHome: true,
+                                     myRuns: homeRuns, theirRuns: awayRuns)
+                awayStatus = .final_(opponentAbbr: homeAbbr, isHome: false,
+                                     myRuns: awayRuns, theirRuns: homeRuns)
+            } else {
+                continue
+            }
+
+            if result[homeId] == nil { result[homeId] = homeStatus }
+            if result[awayId] == nil { result[awayId] = awayStatus }
+        }
+        return result
+    }
+
+    // MARK: - All-games decodable structs (private to file; parseTodayGames exposed for testing)
+
+    private struct AllGamesScheduleResponse: Decodable { let dates: [AllGamesDate] }
+    private struct AllGamesDate: Decodable { let games: [AllGamesGame] }
+    private struct AllGamesGame: Decodable {
+        let gameDate: String
+        let status: GameStatus
+        let teams: AllGamesTeams
+        let linescore: AllGamesLinescore?
+    }
+    private struct AllGamesTeams: Decodable {
+        let away: AllGamesTeamEntry
+        let home: AllGamesTeamEntry
+    }
+    private struct AllGamesTeamEntry: Decodable {
+        struct TeamRef: Decodable { let id: Int; let abbreviation: String }
+        let team: TeamRef
+        let score: Int?
+    }
+    private struct AllGamesLinescore: Decodable {
+        let currentInning: Int?
+        let isTopInning: Bool?
+    }
+
     // MARK: - Generic JSON fetch
 
     private func fetch<T: Decodable>(url: URL, as type: T.Type,
