@@ -56,6 +56,45 @@ func teamAbbreviation(_ name: String) -> String {
     return name.split(separator: " ").prefix(3).map { String($0.prefix(1)) }.joined()
 }
 
+// MARK: - Official MLB abbreviations (all 30 teams, by team ID)
+// Used as a fallback when the schedule API doesn't return abbreviation in the response.
+
+func mlbAbbreviation(for teamId: Int) -> String {
+    let table: [Int: String] = [
+        108: "LAA",   // Los Angeles Angels
+        109: "ARI",   // Arizona Diamondbacks
+        110: "BAL",   // Baltimore Orioles
+        111: "BOS",   // Boston Red Sox
+        112: "CHC",   // Chicago Cubs
+        113: "CIN",   // Cincinnati Reds
+        114: "CLE",   // Cleveland Guardians
+        115: "COL",   // Colorado Rockies
+        116: "DET",   // Detroit Tigers
+        117: "HOU",   // Houston Astros
+        118: "KC",    // Kansas City Royals
+        119: "LAD",   // Los Angeles Dodgers
+        120: "WSH",   // Washington Nationals
+        121: "NYM",   // New York Mets
+        133: "ATH",   // Athletics
+        134: "PIT",   // Pittsburgh Pirates
+        135: "SD",    // San Diego Padres
+        136: "SEA",   // Seattle Mariners
+        137: "SF",    // San Francisco Giants
+        138: "STL",   // St. Louis Cardinals
+        139: "TB",    // Tampa Bay Rays
+        140: "TEX",   // Texas Rangers
+        141: "TOR",   // Toronto Blue Jays
+        142: "MIN",   // Minnesota Twins
+        143: "PHI",   // Philadelphia Phillies
+        144: "ATL",   // Atlanta Braves
+        145: "CWS",   // Chicago White Sox
+        146: "MIA",   // Miami Marlins
+        147: "NYY",   // New York Yankees
+        158: "MIL",   // Milwaukee Brewers
+    ]
+    return table[teamId] ?? "MLB"
+}
+
 // MARK: - ESPN logo codes (all 30 MLB teams)
 // Used to load Assets.xcassets imagesets named "logo-{code}".
 
@@ -175,6 +214,8 @@ enum TodayGameStatus {
               inning: Int, isTopInning: Bool)
     case final_(opponentAbbr: String, isHome: Bool, myRuns: Int, theirRuns: Int)
     case postponed
+    /// Team has no game today; shows their next scheduled game.
+    case nextGame(opponentAbbr: String, isHome: Bool, date: Date)
     case noGame
 }
 
@@ -187,21 +228,45 @@ private let popoverTimeFormatter: DateFormatter = {
     return f
 }()
 
-/// Returns the display string for a team's game info cell (e.g. "● 4–2 ↑5", "vs BOS 7:05 PM").
+/// "4/15" — for next-game date display.
+private let popoverNextDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "M/d"
+    f.timeZone = .current
+    return f
+}()
+
+/// "7pm" — hour-only, lowercase, for next-game time display.
+private let popoverShortTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "ha"
+    f.amSymbol = "am"
+    f.pmSymbol = "pm"
+    f.timeZone = .current
+    return f
+}()
+
+/// Returns the display string for a team's game info cell.
 func gameInfoString(for status: TodayGameStatus) -> String {
     switch status {
     case .upcoming(let opp, let isHome, let time):
-        let prefix = isHome ? "vs" : "@"
-        return "\(prefix) \(opp) \(popoverTimeFormatter.string(from: time))"
-    case .live(_, _, let myRuns, let theirRuns, let inning, let isTop):
+        let prefix = isHome ? "vs." : "@"
+        return "\(prefix) \(opp) · \(popoverTimeFormatter.string(from: time))"
+    case .live(let opp, let isHome, let myRuns, let theirRuns, let inning, let isTop):
+        let vsAt  = isHome ? "vs" : "@"
         let arrow = isTop ? "↑" : "↓"
-        return "● \(myRuns)–\(theirRuns) \(arrow)\(inning)"
+        return "● \(myRuns)-\(theirRuns) \(vsAt) \(opp) · \(inning)\(arrow)"
     case .final_(_, _, let myRuns, let theirRuns):
-        if myRuns > theirRuns { return "W \(myRuns)–\(theirRuns)" }
-        else if myRuns < theirRuns { return "L \(myRuns)–\(theirRuns)" }
-        else { return "T \(myRuns)–\(theirRuns)" }
+        if myRuns > theirRuns { return "W \(myRuns)-\(theirRuns)" }
+        else if myRuns < theirRuns { return "L \(myRuns)-\(theirRuns)" }
+        else { return "T \(myRuns)-\(theirRuns)" }
     case .postponed:
         return "PPD"
+    case .nextGame(let opp, let isHome, let date):
+        let prefix = isHome ? "vs." : "@"
+        let dateStr = popoverNextDateFormatter.string(from: date)
+        let timeStr = popoverShortTimeFormatter.string(from: date)
+        return "\(prefix) \(opp) \(dateStr) \(timeStr)"
     case .noGame:
         return "—"
     }

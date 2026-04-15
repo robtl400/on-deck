@@ -333,22 +333,84 @@ final class GameFetcher {
 
     // MARK: - All-games schedule (for standings popover)
 
-    /// Fetches today's game status for all 30 teams from the hydrated schedule endpoint.
+    /// Fetches today's game status for all 30 teams and, for teams with no game today,
+    /// their next scheduled game within the next 7 days.
     /// Calls completion on a background queue with `[teamId: TodayGameStatus]`.
     /// On network/parse error, calls completion with an empty dict.
     func fetchTodayAllGames(date: Date = Date(),
                             completion: @escaping ([Int: TodayGameStatus]) -> Void) {
-        let dateStr = Self.officialDateFormatter.string(from: date)
-        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&date=\(dateStr)&hydrate=linescore")!
+        let dateStr     = Self.officialDateFormatter.string(from: date)
+        let tomorrowStr = Self.officialDateFormatter.string(from: date.addingTimeInterval(86_400))
+        let endDateStr  = Self.officialDateFormatter.string(from: date.addingTimeInterval(7 * 86_400))
 
-        let task = session.dataTask(with: url) { [weak self] data, _, error in
-            guard let self, error == nil, let data else {
-                completion([:])
-                return
+        let todayURL  = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&date=\(dateStr)&hydrate=linescore")!
+        let futureURL = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&startDate=\(tomorrowStr)&endDate=\(endDateStr)")!
+
+        // Run both requests in parallel; merge results when both finish.
+        let group = DispatchGroup()
+        var todayGames: [Int: TodayGameStatus] = [:]
+        var futureData: Data?
+
+        group.enter()
+        session.dataTask(with: todayURL) { [weak self] data, _, error in
+            defer { group.leave() }
+            guard let self, error == nil, let data else { return }
+            todayGames = self.parseTodayGames(from: data)
+        }.resume()
+
+        group.enter()
+        session.dataTask(with: futureURL) { data, _, error in
+            defer { group.leave() }
+            guard error == nil, let data else { return }
+            futureData = data
+        }.resume()
+
+        group.notify(queue: .global()) { [weak self] in
+            guard let self else { completion([:]); return }
+
+            var result = todayGames
+
+            // For every team not in today's results, find their next game.
+            let allTeamIds = Set(mlbDivisions.flatMap { $0.teamIds })
+            let idle = allTeamIds.subtracting(result.keys)
+            if !idle.isEmpty, let data = futureData {
+                for (teamId, status) in self.parseNextGames(from: data, forTeams: idle) {
+                    result[teamId] = status
+                }
             }
-            completion(self.parseTodayGames(from: data))
+
+            completion(result)
         }
-        task.resume()
+    }
+
+    /// Finds the earliest upcoming game for each team in `teamIds` from a future schedule payload.
+    func parseNextGames(from data: Data, forTeams teamIds: Set<Int>) -> [Int: TodayGameStatus] {
+        guard let response = try? JSONDecoder().decode(AllGamesScheduleResponse.self, from: data) else {
+            return [:]
+        }
+        var result: [Int: TodayGameStatus] = [:]
+        let games = response.dates.flatMap { $0.games }
+            .filter  { $0.status.abstractGameState == "Preview" }
+            .sorted  { $0.gameDate < $1.gameDate }
+
+        for game in games {
+            guard let gameDate = isoFormatter.date(from: game.gameDate) else { continue }
+            let homeId   = game.teams.home.team.id
+            let awayId   = game.teams.away.team.id
+            let homeAbbr = game.teams.home.team.abbreviation ?? mlbAbbreviation(for: homeId)
+            let awayAbbr = game.teams.away.team.abbreviation ?? mlbAbbreviation(for: awayId)
+
+            if teamIds.contains(homeId) && result[homeId] == nil {
+                result[homeId] = .nextGame(opponentAbbr: awayAbbr, isHome: true, date: gameDate)
+            }
+            if teamIds.contains(awayId) && result[awayId] == nil {
+                result[awayId] = .nextGame(opponentAbbr: homeAbbr, isHome: false, date: gameDate)
+            }
+
+            // Early exit once every idle team has a next game.
+            if result.count == teamIds.count { break }
+        }
+        return result
     }
 
     /// Parses a hydrated schedule Data payload into a per-team status dict.
@@ -364,8 +426,8 @@ final class GameFetcher {
         for game in allGames {
             let homeId   = game.teams.home.team.id
             let awayId   = game.teams.away.team.id
-            let homeAbbr = game.teams.home.team.abbreviation
-            let awayAbbr = game.teams.away.team.abbreviation
+            let homeAbbr = game.teams.home.team.abbreviation ?? mlbAbbreviation(for: homeId)
+            let awayAbbr = game.teams.away.team.abbreviation ?? mlbAbbreviation(for: awayId)
             let detailed = game.status.detailedState ?? ""
             let state    = game.status.abstractGameState
 
@@ -422,7 +484,10 @@ final class GameFetcher {
         let home: AllGamesTeamEntry
     }
     private struct AllGamesTeamEntry: Decodable {
-        struct TeamRef: Decodable { let id: Int; let abbreviation: String }
+        // `abbreviation` is NOT returned by the base schedule endpoint — only when
+        // the response is hydrated. Make it optional and fall back to the local
+        // lookup so parseTodayGames never fails silently due to a missing key.
+        struct TeamRef: Decodable { let id: Int; let abbreviation: String? }
         let team: TeamRef
         let score: Int?
     }
