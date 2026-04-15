@@ -349,6 +349,7 @@ final class GameFetcher {
         // Run both requests in parallel; merge results when both finish.
         let group = DispatchGroup()
         var todayGames: [Int: TodayGameStatus] = [:]
+        var todayFetchSucceeded = false
         var futureData: Data?
 
         group.enter()
@@ -356,6 +357,7 @@ final class GameFetcher {
             defer { group.leave() }
             guard let self, error == nil, let data else { return }
             todayGames = self.parseTodayGames(from: data)
+            todayFetchSucceeded = true
         }.resume()
 
         group.enter()
@@ -367,6 +369,10 @@ final class GameFetcher {
 
         group.notify(queue: .global()) { [weak self] in
             guard let self else { completion([:]); return }
+
+            // If today's fetch failed, return empty rather than fabricating
+            // .nextGame entries for teams that may actually have games today.
+            guard todayFetchSucceeded else { completion([:]); return }
 
             var result = todayGames
 
@@ -384,7 +390,7 @@ final class GameFetcher {
     }
 
     /// Finds the earliest upcoming game for each team in `teamIds` from a future schedule payload.
-    func parseNextGames(from data: Data, forTeams teamIds: Set<Int>) -> [Int: TodayGameStatus] {
+    private func parseNextGames(from data: Data, forTeams teamIds: Set<Int>) -> [Int: TodayGameStatus] {
         guard let response = try? JSONDecoder().decode(AllGamesScheduleResponse.self, from: data) else {
             return [:]
         }

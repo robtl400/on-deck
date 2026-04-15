@@ -265,38 +265,38 @@ final class GameInfoStringTests: XCTestCase {
         let s = gameInfoString(for: .live(opponentAbbr: "BOS", isHome: true,
                                           myRuns: 4, theirRuns: 2,
                                           inning: 5, isTopInning: true))
-        XCTAssertEqual(s, "● 4–2 ↑5")
+        XCTAssertEqual(s, "● 4-2 vs BOS · 5↑")
     }
 
     func testLiveBottomInning() {
         let s = gameInfoString(for: .live(opponentAbbr: "BOS", isHome: false,
                                           myRuns: 1, theirRuns: 3,
                                           inning: 7, isTopInning: false))
-        XCTAssertEqual(s, "● 1–3 ↓7")
+        XCTAssertEqual(s, "● 1-3 @ BOS · 7↓")
     }
 
     func testUpcomingHomeFormat() {
         let s = gameInfoString(for: .upcoming(opponentAbbr: "BOS", isHome: true,
                                               time: futureDate))
-        XCTAssertTrue(s.hasPrefix("vs BOS "), "Expected 'vs BOS …', got '\(s)'")
+        XCTAssertTrue(s.hasPrefix("vs. BOS · "), "Expected 'vs. BOS · …', got '\(s)'")
     }
 
     func testUpcomingAwayFormat() {
         let s = gameInfoString(for: .upcoming(opponentAbbr: "BOS", isHome: false,
                                               time: futureDate))
-        XCTAssertTrue(s.hasPrefix("@ BOS "), "Expected '@ BOS …', got '\(s)'")
+        XCTAssertTrue(s.hasPrefix("@ BOS · "), "Expected '@ BOS · …', got '\(s)'")
     }
 
     func testFinalWinFormat() {
         let s = gameInfoString(for: .final_(opponentAbbr: "BOS", isHome: true,
                                             myRuns: 5, theirRuns: 3))
-        XCTAssertEqual(s, "W 5–3")
+        XCTAssertEqual(s, "W 5-3")
     }
 
     func testFinalLossFormat() {
         let s = gameInfoString(for: .final_(opponentAbbr: "BOS", isHome: false,
                                             myRuns: 3, theirRuns: 5))
-        XCTAssertEqual(s, "L 3–5")
+        XCTAssertEqual(s, "L 3-5")
     }
 
     func testPostponedFormat() {
@@ -305,6 +305,18 @@ final class GameInfoStringTests: XCTestCase {
 
     func testNoGameFormat() {
         XCTAssertEqual(gameInfoString(for: .noGame), "—")
+    }
+
+    func testNextGameHomeFormat() {
+        let s = gameInfoString(for: .nextGame(opponentAbbr: "BOS", isHome: true,
+                                              date: futureDate))
+        XCTAssertTrue(s.hasPrefix("vs. BOS "), "Expected 'vs. BOS …', got '\(s)'")
+    }
+
+    func testNextGameAwayFormat() {
+        let s = gameInfoString(for: .nextGame(opponentAbbr: "BOS", isHome: false,
+                                              date: futureDate))
+        XCTAssertTrue(s.hasPrefix("@ BOS "), "Expected '@ BOS …', got '\(s)'")
     }
 }
 
