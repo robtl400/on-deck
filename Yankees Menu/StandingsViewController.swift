@@ -15,6 +15,7 @@ final class StandingsViewController: NSViewController {
 
     private var rowViews: [Int: TeamRowView] = [:]
     private var divisionTeamStacks: [Int: NSStackView] = [:]  // keyed by MLBDivision.id
+    private var appearanceObservation: NSKeyValueObservation?
 
     // MARK: - Init
 
@@ -48,11 +49,9 @@ final class StandingsViewController: NSViewController {
         view.wantsLayer = true
         applyBackground()
         buildLayout()
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        applyBackground()
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            self?.applyBackground()
+        }
     }
 
     private func applyBackground() {
