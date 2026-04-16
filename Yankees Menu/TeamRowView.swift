@@ -20,7 +20,7 @@ final class TeamRowView: NSView {
     private let rankLabel     = NSTextField(labelWithString: "")
     private let logoView      = NSImageView()
     private let nameLabel     = NSTextField(labelWithString: "")
-    private let gameInfoLabel = NSTextField(labelWithString: "")
+    let gameInfoLabel = NSTextField(labelWithString: "")
     private let winsLabel     = NSTextField(labelWithString: "")
     private let dashLabel     = NSTextField(labelWithString: "")
     private let lossesLabel   = NSTextField(labelWithString: "")
@@ -38,7 +38,7 @@ final class TeamRowView: NSView {
 
     init(teamId: Int) {
         self.teamId = teamId
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        super.init(frame: NSRect(x: 0, y: 0, width: 319, height: 24))
         setup()
     }
 
@@ -61,7 +61,7 @@ final class TeamRowView: NSView {
         // Game info
         gameInfoLabel.font = NSFont.systemFont(ofSize: 11)
         gameInfoLabel.textColor = .secondaryLabelColor
-        gameInfoLabel.alignment = .right
+        gameInfoLabel.alignment = .left
 
         // Wins / dash / losses (record, split into three fixed-width labels so
         // the "–" separator always sits at the same X position regardless of
@@ -91,14 +91,14 @@ final class TeamRowView: NSView {
             addSubview(v)
         }
 
-        // Layout (column width = 279pt)
+        // Layout (column width = 319pt)
         // rank:     8pt leading, 18pt wide
         // logo:     4pt gap, 16pt wide
         // name:     4pt gap, flexible up to gameInfo
-        // gameInfo: trailing pinned to wins.leading – 6; width = 0 when no game, 90 otherwise
-        // wins:     18pt, right-aligned  ─┐
-        // dash:      8pt, centered        ├─ record area 44pt, dash always at same X
-        // losses:   18pt, left-aligned  ──┘
+        // gameInfo: trailing pinned to wins.leading – 6; width = 0 when no game, 105 otherwise
+        // wins:     20pt, right-aligned  ─┐
+        // dash:      8pt, centered        ├─ record area 48pt, dash always at same X
+        // losses:   20pt, left-aligned  ──┘
         // margin:   8pt trailing
 
         let gameInfoWidth = gameInfoLabel.widthAnchor.constraint(equalToConstant: 0)
@@ -126,7 +126,7 @@ final class TeamRowView: NSView {
 
             winsLabel.trailingAnchor.constraint(equalTo: dashLabel.leadingAnchor),
             winsLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            winsLabel.widthAnchor.constraint(equalToConstant: 18),
+            winsLabel.widthAnchor.constraint(equalToConstant: 20),
 
             dashLabel.trailingAnchor.constraint(equalTo: lossesLabel.leadingAnchor),
             dashLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -134,7 +134,7 @@ final class TeamRowView: NSView {
 
             lossesLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             lossesLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            lossesLabel.widthAnchor.constraint(equalToConstant: 18),
+            lossesLabel.widthAnchor.constraint(equalToConstant: 20),
         ])
     }
 
@@ -169,15 +169,19 @@ final class TeamRowView: NSView {
     }
 
     func setGameStatus(_ status: TodayGameStatus) {
-        if case .noGame = status {
-            // Collapse the game info column entirely — gives name label full room.
+        switch status {
+        case .noGame, .final_:
+            // Collapse game info — final scores are not shown; next game (if any)
+            // will be delivered as a .nextGame status by the fetcher instead.
             gameInfoLabel.isHidden = true
             gameInfoWidthConstraint?.constant = 0
             return
+        default:
+            break
         }
 
         gameInfoLabel.isHidden = false
-        gameInfoWidthConstraint?.constant = 90
+        gameInfoWidthConstraint?.constant = 105
 
         let str = gameInfoString(for: status)
         if case .live = status, str.hasPrefix("●") {

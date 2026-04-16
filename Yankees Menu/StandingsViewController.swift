@@ -33,7 +33,7 @@ final class StandingsViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError() }
 
     override var preferredContentSize: NSSize {
-        get { NSSize(width: 560, height: 700) }
+        get { NSSize(width: 640, height: 476) }
         set { }
     }
 
@@ -62,17 +62,11 @@ final class StandingsViewController: NSViewController {
 
     private func buildLayout() {
         let headerHeight: CGFloat = 32
-        let colHeaderHeight: CGFloat = 18
 
         // ── Header bar ──────────────────────────────────────────────────
         let header = makeHeaderBar()
         header.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(header)
-
-        // ── Column header bar (W / L labels) ────────────────────────────
-        let colHeader = makeColumnHeaderBar()
-        colHeader.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(colHeader)
 
         // ── Vertical divider between columns ────────────────────────────
         let divider = NSView()
@@ -99,17 +93,11 @@ final class StandingsViewController: NSViewController {
             header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: headerHeight),
 
-            // Column header (W / L)
-            colHeader.topAnchor.constraint(equalTo: header.bottomAnchor),
-            colHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            colHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            colHeader.heightAnchor.constraint(equalToConstant: colHeaderHeight),
-
-            // Left scroll — starts below column header
-            leftScroll.topAnchor.constraint(equalTo: colHeader.bottomAnchor),
+            // Left scroll — starts directly below header
+            leftScroll.topAnchor.constraint(equalTo: header.bottomAnchor),
             leftScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             leftScroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            leftScroll.widthAnchor.constraint(equalToConstant: 280),
+            leftScroll.widthAnchor.constraint(equalToConstant: 320),
 
             // Divider
             divider.topAnchor.constraint(equalTo: header.bottomAnchor),
@@ -118,74 +106,11 @@ final class StandingsViewController: NSViewController {
             divider.widthAnchor.constraint(equalToConstant: 1),
 
             // Right scroll
-            rightScroll.topAnchor.constraint(equalTo: colHeader.bottomAnchor),
+            rightScroll.topAnchor.constraint(equalTo: header.bottomAnchor),
             rightScroll.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
             rightScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             rightScroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-    }
-
-    // MARK: - Column header bar (W / L)
-
-    private func makeColumnHeaderBar() -> NSView {
-        let bar = NSView()
-        bar.wantsLayer = true
-
-        // Record area per 279pt column (matches TeamRowView layout):
-        //   winsLabel:   leading 227, width 18, trailing 245
-        //   dashLabel:   leading 245, width  8, trailing 253
-        //   lossesLabel: leading 253, width 18, trailing 271
-        //
-        // For the NL column the same offsets apply relative to its leading edge (281pt).
-
-        func makeRecordHeaders(columnLeading: CGFloat) -> [NSView] {
-            let font = NSFont.systemFont(ofSize: 9, weight: .semibold)
-            let color = NSColor.tertiaryLabelColor
-
-            let w = NSTextField(labelWithString: "W")
-            w.font = font; w.textColor = color; w.alignment = .right
-
-            let l = NSTextField(labelWithString: "L")
-            l.font = font; l.textColor = color; l.alignment = .left
-
-            for label in [w, l] {
-                label.isEditable = false; label.isSelectable = false
-                label.isBordered = false; label.drawsBackground = false
-                label.translatesAutoresizingMaskIntoConstraints = false
-                bar.addSubview(label)
-            }
-
-            NSLayoutConstraint.activate([
-                // "W" centered over winsLabel (227–245 in column coords)
-                w.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: columnLeading + 227),
-                w.widthAnchor.constraint(equalToConstant: 18),
-                w.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-
-                // "L" centered over lossesLabel (253–271 in column coords)
-                l.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: columnLeading + 253),
-                l.widthAnchor.constraint(equalToConstant: 18),
-                l.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            ])
-            return [w, l]
-        }
-
-        _ = makeRecordHeaders(columnLeading: 0)    // AL column
-        _ = makeRecordHeaders(columnLeading: 281)  // NL column (after 280pt + 1pt divider)
-
-        // 1pt bottom border
-        let border = NSView()
-        border.wantsLayer = true
-        border.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        border.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(border)
-        NSLayoutConstraint.activate([
-            border.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
-            border.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
-            border.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
-            border.heightAnchor.constraint(equalToConstant: 1),
-        ])
-
-        return bar
     }
 
     // MARK: - Header bar (32pt)
@@ -226,11 +151,11 @@ final class StandingsViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             alLabel.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
-            alLabel.widthAnchor.constraint(equalToConstant: 280),
+            alLabel.widthAnchor.constraint(equalToConstant: 320),
             alLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
 
-            nlLabel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 280),
-            nlLabel.widthAnchor.constraint(equalToConstant: 244),
+            nlLabel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 320),
+            nlLabel.widthAnchor.constraint(equalToConstant: 284),
             nlLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
 
             gear.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -2),
@@ -263,8 +188,12 @@ final class StandingsViewController: NSViewController {
         scroll.scrollerStyle = .overlay
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        scroll.automaticallyAdjustsContentInsets = false
 
-        let stack = NSStackView()
+        // FlippedStackView (isFlipped = true) causes NSScrollView's auto-created
+        // NSClipView to inherit the flipped coordinate system, so y=0 is the visual
+        // top and the scroll position starts there by default.
+        let stack = FlippedStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
@@ -278,16 +207,16 @@ final class StandingsViewController: NSViewController {
                 sep.layer?.backgroundColor = NSColor.separatorColor.cgColor
                 stack.addArrangedSubview(sep)
                 NSLayoutConstraint.activate([
-                    sep.widthAnchor.constraint(equalToConstant: 279),
+                    sep.widthAnchor.constraint(equalToConstant: 319),
                     sep.heightAnchor.constraint(equalToConstant: 1),
                 ])
             }
 
-            // Division header (28pt standard; 14pt for first — no top-padding needed)
+            // Division header (28pt standard; 8pt for first — no top-padding needed)
             let headerView = makeDivisionHeader(division.name, isFirst: i == 0)
             stack.addArrangedSubview(headerView)
             NSLayoutConstraint.activate([
-                headerView.widthAnchor.constraint(equalToConstant: 279),
+                headerView.widthAnchor.constraint(equalToConstant: 319),
             ])
 
             // Per-division team stack — stored so update(standings:) can reorder it.
@@ -297,7 +226,7 @@ final class StandingsViewController: NSViewController {
             teamStack.spacing = 0
             stack.addArrangedSubview(teamStack)
             NSLayoutConstraint.activate([
-                teamStack.widthAnchor.constraint(equalToConstant: 279),
+                teamStack.widthAnchor.constraint(equalToConstant: 319),
             ])
             divisionTeamStacks[division.id] = teamStack
 
@@ -307,20 +236,25 @@ final class StandingsViewController: NSViewController {
                 let row = makeTeamRow(teamId: teamId, rank: index + 1)
                 teamStack.addArrangedSubview(row)
                 NSLayoutConstraint.activate([
-                    row.widthAnchor.constraint(equalToConstant: 279),
+                    row.widthAnchor.constraint(equalToConstant: 319),
                 ])
                 rowViews[teamId] = row
             }
         }
 
-        // Clip view / document view setup
-        let clipView = NSClipView()
-        clipView.documentView = stack
-        clipView.drawsBackground = false
-        scroll.contentView = clipView
+        // 8pt breathing room at the bottom of the content.
+        let bottomSpacer = NSView()
+        stack.addArrangedSubview(bottomSpacer)
+        NSLayoutConstraint.activate([
+            bottomSpacer.widthAnchor.constraint(equalToConstant: 319),
+            bottomSpacer.heightAnchor.constraint(equalToConstant: 8),
+        ])
 
-        // Pin stack width to scroll width and let it grow vertically
+        // Single documentView assignment — avoids the dual-assignment bug where
+        // a second scroll.documentView = stack call reinitialises the clip view
+        // and silently invalidates topAnchor constraints against the old reference.
         scroll.documentView = stack
+        let clipView = scroll.contentView
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
@@ -335,6 +269,7 @@ final class StandingsViewController: NSViewController {
     private func makeDivisionHeader(_ name: String, isFirst: Bool = false) -> NSView {
         let container = NSView()
 
+        // Division name label
         let label = NSTextField(labelWithString: "")
         let kern: [NSAttributedString.Key: Any] = [
             .kern: 0.8,
@@ -345,12 +280,39 @@ final class StandingsViewController: NSViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
-        // First division needs no top gap (nothing above it). Others use 28pt for
-        // visual separation from the previous division's team rows.
+        // W / L column headers — positioned to align with TeamRowView's record columns.
+        // Offsets derived from TeamRowView trailing arithmetic (row width 319):
+        //   winsLabel:   319 - 8(margin) - 20(losses) - 8(dash) - 20(wins) = 263 leading
+        //   lossesLabel: 319 - 8(margin) - 20(losses)                      = 291 leading
+        // If TeamRowView's record widths or trailing margin change, update these too.
+        let wLabel = NSTextField(labelWithString: "W")
+        let lLabel = NSTextField(labelWithString: "L")
+        let recFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
+        for (lbl, align) in [(wLabel, NSTextAlignment.right), (lLabel, .left)] {
+            lbl.font = recFont
+            lbl.textColor = .tertiaryLabelColor
+            lbl.alignment = align
+            lbl.isEditable = false; lbl.isSelectable = false
+            lbl.isBordered = false; lbl.drawsBackground = false
+            lbl.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(lbl)
+        }
+
+        // First division gets 18pt — enough to show the W/L headers without a gap above.
+        // Others use 28pt — the extra space provides visual separation from the previous division's rows.
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: isFirst ? 14 : 28),
+            container.heightAnchor.constraint(equalToConstant: isFirst ? 18 : 28),
+
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+
+            wLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 263),
+            wLabel.widthAnchor.constraint(equalToConstant: 20),
+            wLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+
+            lLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 291),
+            lLabel.widthAnchor.constraint(equalToConstant: 20),
+            lLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
         ])
 
         return container
@@ -423,4 +385,13 @@ final class StandingsViewController: NSViewController {
         guard let event = NSApp.currentEvent else { return }
         NSMenu.popUpContextMenu(settingsMenu, with: event, for: sender)
     }
+}
+
+// NSScrollView in AppKit uses a non-flipped coordinate system by default, which
+// causes the initial scroll position to land at the visual bottom of the document.
+// Overriding isFlipped = true on the document view makes the clip view adopt the
+// same flipped system (y=0 at visual top), so the scroll view starts at the top
+// and topAnchor constraints resolve correctly.
+private final class FlippedStackView: NSStackView {
+    override var isFlipped: Bool { true }
 }

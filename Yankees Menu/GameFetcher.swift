@@ -374,19 +374,36 @@ final class GameFetcher {
             // .nextGame entries for teams that may actually have games today.
             guard todayFetchSucceeded else { completion([:]); return }
 
-            var result = todayGames
-
-            // For every team not in today's results, find their next game.
-            let allTeamIds = Set(mlbDivisions.flatMap { $0.teamIds })
-            let idle = allTeamIds.subtracting(result.keys)
-            if !idle.isEmpty, let data = futureData {
-                for (teamId, status) in self.parseNextGames(from: data, forTeams: idle) {
-                    result[teamId] = status
-                }
-            }
-
-            completion(result)
+            completion(self.mergeGames(today: todayGames, futureData: futureData))
         }
+    }
+
+    /// Merges today's game statuses with future-schedule data.
+    /// Internal so unit tests can exercise the merge logic without the network layer.
+    func mergeGames(today: [Int: TodayGameStatus], futureData: Data?) -> [Int: TodayGameStatus] {
+        var result = today
+
+        // Teams with no game today, plus teams whose game is final — both
+        // should show their next scheduled game instead of nothing / a final score.
+        let allTeamIds = Set(mlbDivisions.flatMap { $0.teamIds })
+        let finalIds   = Set(result.compactMap { (id, status) -> Int? in
+            if case .final_ = status { return id } else { return nil }
+        })
+        let idle = allTeamIds.subtracting(result.keys).union(finalIds)
+
+        if !idle.isEmpty, let data = futureData {
+            for (teamId, status) in parseNextGames(from: data, forTeams: idle) {
+                result[teamId] = status
+            }
+        } else if !finalIds.isEmpty {
+            // Future fetch unavailable — emit .noGame for stale .final_ entries so
+            // the view shows a blank row rather than silently collapsing a stale score.
+            for teamId in finalIds {
+                result[teamId] = .noGame
+            }
+        }
+
+        return result
     }
 
     /// Finds the earliest upcoming game for each team in `teamIds` from a future schedule payload.

@@ -495,3 +495,129 @@ final class AllGamesParsingTests: XCTestCase {
         XCTAssertTrue(result.isEmpty, "Parse failure should return empty dict")
     }
 }
+
+// MARK: - mergeGames tests
+
+final class AllGamesMergeTests: XCTestCase {
+
+    private let fetcher = GameFetcher()
+
+    // Reuse the same fixture helpers as AllGamesParsingTests.
+    private func gameJSON(homeId: Int, homeAbbr: String, homeScore: Int?,
+                          awayId: Int, awayAbbr: String, awayScore: Int?,
+                          abstractState: String,
+                          gameDate: String = "2026-04-14T18:10:00Z") -> String {
+        let scoreH = homeScore.map { "\($0)" } ?? "null"
+        let scoreA = awayScore.map { "\($0)" } ?? "null"
+        return """
+        {
+          "gameDate": "\(gameDate)",
+          "status": {"abstractGameState": "\(abstractState)", "detailedState": null},
+          "teams": {
+            "home": {"team": {"id": \(homeId), "abbreviation": "\(homeAbbr)"}, "score": \(scoreH)},
+            "away": {"team": {"id": \(awayId), "abbreviation": "\(awayAbbr)"}, "score": \(scoreA)}
+          },
+          "linescore": null
+        }
+        """
+    }
+
+    private func scheduleData(_ games: [String]) -> Data {
+        let joined = games.joined(separator: ",")
+        return "{\"dates\":[{\"games\":[\(joined)]}]}".data(using: .utf8)!
+    }
+
+    func testFinalTeamGetsNextGameWhenFutureDataAvailable() {
+        // Today: NYY finished a Final game.
+        let todayData = scheduleData([
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: 5,
+                     awayId: 111, awayAbbr: "BOS", awayScore: 3,
+                     abstractState: "Final")
+        ])
+        let today = fetcher.parseTodayGames(from: todayData)
+        guard case .final_ = today[147] else {
+            XCTFail("Expected .final_ for NYY in today's data"); return
+        }
+
+        // Future: NYY has an upcoming Preview game.
+        let futureData = scheduleData([
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                     awayId: 146, awayAbbr: "MIA", awayScore: nil,
+                     abstractState: "Preview",
+                     gameDate: "2026-04-17T23:05:00Z")
+        ])
+
+        let result = fetcher.mergeGames(today: today, futureData: futureData)
+
+        if case .nextGame(let opp, let isHome, _) = result[147] {
+            XCTAssertEqual(opp, "MIA", "Next game opponent should be MIA")
+            XCTAssertTrue(isHome, "NYY is home in the next game")
+        } else {
+            XCTFail("Expected .nextGame for NYY after merge, got \(String(describing: result[147]))")
+        }
+    }
+
+    func testFinalTeamGetsNoGameWhenFutureDataUnavailable() {
+        // Today: NYY finished a Final game.
+        let todayData = scheduleData([
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: 5,
+                     awayId: 111, awayAbbr: "BOS", awayScore: 3,
+                     abstractState: "Final")
+        ])
+        let today = fetcher.parseTodayGames(from: todayData)
+
+        // Future fetch failed — futureData is nil.
+        let result = fetcher.mergeGames(today: today, futureData: nil)
+
+        if case .noGame = result[147] {
+            // correct — blank row, not a stale collapsed .final_
+        } else {
+            XCTFail("Expected .noGame for NYY when futureData is nil, got \(String(describing: result[147]))")
+        }
+    }
+
+    func testIdleTeamStaysNoGameWhenFutureDataUnavailable() {
+        // Today: NYY has no game at all. Future fetch failed.
+        let today: [Int: TodayGameStatus] = [:]
+        let result = fetcher.mergeGames(today: today, futureData: nil)
+        // Idle teams should not appear in result — callers coalesce nil to .noGame.
+        XCTAssertNil(result[147], "Idle team with no future data should be absent from result")
+    }
+}
+
+// MARK: - TeamRowView setGameStatus tests
+
+final class TeamRowViewGameStatusTests: XCTestCase {
+
+    private let upcomingDate = Date(timeIntervalSince1970: 1775347500 + 86_400)  // tomorrow ~7PM
+
+    func testFinalCollapsesGameInfo() {
+        let row = TeamRowView(teamId: 147)
+
+        // An upcoming game makes the label visible.
+        row.setGameStatus(.upcoming(opponentAbbr: "BOS", isHome: true, time: Date()))
+        XCTAssertFalse(row.gameInfoLabel.isHidden, "Label should be visible for .upcoming")
+
+        // .final_ must collapse it.
+        row.setGameStatus(.final_(opponentAbbr: "BOS", isHome: true, myRuns: 5, theirRuns: 3))
+        XCTAssertTrue(row.gameInfoLabel.isHidden, ".final_ should hide the game info label")
+    }
+
+    func testNextGameAfterFinalReShowsGameInfo() {
+        let row = TeamRowView(teamId: 147)
+
+        // Simulate the fetcher's replacement: .final_ → .nextGame
+        row.setGameStatus(.final_(opponentAbbr: "BOS", isHome: true, myRuns: 5, theirRuns: 3))
+        XCTAssertTrue(row.gameInfoLabel.isHidden, ".final_ should hide the label")
+
+        row.setGameStatus(.nextGame(opponentAbbr: "MIA", isHome: false, date: upcomingDate))
+        XCTAssertFalse(row.gameInfoLabel.isHidden, ".nextGame should unhide the label")
+    }
+
+    func testNoGameCollapsesGameInfo() {
+        let row = TeamRowView(teamId: 147)
+        row.setGameStatus(.upcoming(opponentAbbr: "BOS", isHome: true, time: Date()))
+        row.setGameStatus(.noGame)
+        XCTAssertTrue(row.gameInfoLabel.isHidden, ".noGame should hide the game info label")
+    }
+}
