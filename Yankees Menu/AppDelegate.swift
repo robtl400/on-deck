@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Popover state
     private var popover: NSPopover?
     private var standingsVC: StandingsViewController?
+    private var eventMonitor: Any?
     private var latestTodayGames: [Int: TodayGameStatus]?
     private var latestTodayGamesTimestamp: Date?
     private var todayGamesTimer: Timer?
@@ -84,6 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         popover = pop
         standingsVC = vc
+
+        // Close the popover when the user clicks outside it in any other app or on
+        // the desktop. NSPopover.behavior = .transient handles in-app clicks; the
+        // global monitor covers Finder, other apps, and the desktop where .transient
+        // doesn't reliably fire for .accessory-policy processes.
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak pop] _ in
+            pop?.performClose(nil)
+        }
 
         // Live-refresh timer: fires every 30s while popover is open.
         todayGamesTimer?.invalidate()
@@ -399,6 +408,10 @@ extension AppDelegate: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         todayGamesTimer?.invalidate()
         todayGamesTimer = nil
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
         standingsVC = nil
         popover = nil
     }
