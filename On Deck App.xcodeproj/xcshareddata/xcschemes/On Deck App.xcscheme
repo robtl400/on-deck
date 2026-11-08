@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "22272C9E2F81F4C70043973F"
-               BuildableName = "Yankees Menu.app"
-               BlueprintName = "Yankees Menu"
-               ReferencedContainer = "container:Yankees Menu.xcodeproj">
+               BuildableName = "On Deck App.app"
+               BlueprintName = "On Deck App"
+               ReferencedContainer = "container:On Deck App.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -36,9 +36,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "22272CAB2F81F4C80043973F"
-               BuildableName = "Yankees MenuTests.xctest"
-               BlueprintName = "Yankees MenuTests"
-               ReferencedContainer = "container:Yankees Menu.xcodeproj">
+               BuildableName = "On Deck AppTests.xctest"
+               BlueprintName = "On Deck AppTests"
+               ReferencedContainer = "container:On Deck App.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -47,9 +47,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "22272CB52F81F4C80043973F"
-               BuildableName = "Yankees MenuUITests.xctest"
-               BlueprintName = "Yankees MenuUITests"
-               ReferencedContainer = "container:Yankees Menu.xcodeproj">
+               BuildableName = "On Deck AppUITests.xctest"
+               BlueprintName = "On Deck AppUITests"
+               ReferencedContainer = "container:On Deck App.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -70,9 +70,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "22272C9E2F81F4C70043973F"
-            BuildableName = "Yankees Menu.app"
-            BlueprintName = "Yankees Menu"
-            ReferencedContainer = "container:Yankees Menu.xcodeproj">
+            BuildableName = "On Deck App.app"
+            BlueprintName = "On Deck App"
+            ReferencedContainer = "container:On Deck App.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -87,9 +87,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "22272C9E2F81F4C70043973F"
-            BuildableName = "Yankees Menu.app"
-            BlueprintName = "Yankees Menu"
-            ReferencedContainer = "container:Yankees Menu.xcodeproj">
+            BuildableName = "On Deck App.app"
+            BlueprintName = "On Deck App"
+            ReferencedContainer = "container:On Deck App.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

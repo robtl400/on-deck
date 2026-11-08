@@ -1,14 +1,14 @@
 //
-//  Yankees_MenuTests.swift
-//  Yankees MenuTests
+//  On_Deck_AppTests.swift
+//  On Deck AppTests
 //
 //  Created by Robert Lord on 4/4/26.
 //
 
 import XCTest
-@testable import Yankees_Menu
+@testable import On_Deck_App
 
-final class Yankees_MenuTests: XCTestCase {
+final class On_Deck_AppTests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

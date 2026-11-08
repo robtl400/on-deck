@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSLog("🚀 Yankees Menu app launched")
+        NSLog("🚀 On Deck App launched")
 
         NSApp.setActivationPolicy(.accessory)
         NSLog("📱 Activation policy set to accessory")
@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         m.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Yankees Menu Bar",
+        let quitItem = NSMenuItem(title: "Quit On Deck App",
                                   action: #selector(NSApplication.terminate(_:)),
                                   keyEquivalent: "q")
         m.addItem(quitItem)

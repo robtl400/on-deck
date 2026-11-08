@@ -12,37 +12,37 @@
 			containerPortal = 22272C972F81F4C70043973F /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 22272C9E2F81F4C70043973F;
-			remoteInfo = "Yankees Menu";
+			remoteInfo = "On Deck App";
 		};
 		22272CB72F81F4C80043973F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 22272C972F81F4C70043973F /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 22272C9E2F81F4C70043973F;
-			remoteInfo = "Yankees Menu";
+			remoteInfo = "On Deck App";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		22272C9F2F81F4C70043973F /* Yankees Menu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Yankees Menu.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		22272CAC2F81F4C80043973F /* Yankees MenuTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Yankees MenuTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		22272CB62F81F4C80043973F /* Yankees MenuUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Yankees MenuUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		22272C9F2F81F4C70043973F /* On Deck App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "On Deck App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		22272CAC2F81F4C80043973F /* On Deck AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "On Deck AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		22272CB62F81F4C80043973F /* On Deck AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "On Deck AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		22272CA12F81F4C70043973F /* Yankees Menu */ = {
+		22272CA12F81F4C70043973F /* On Deck App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Yankees Menu";
+			path = "On Deck App";
 			sourceTree = "<group>";
 		};
-		22272CAF2F81F4C80043973F /* Yankees MenuTests */ = {
+		22272CAF2F81F4C80043973F /* On Deck AppTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Yankees MenuTests";
+			path = "On Deck AppTests";
 			sourceTree = "<group>";
 		};
-		22272CB92F81F4C80043973F /* Yankees MenuUITests */ = {
+		22272CB92F81F4C80043973F /* On Deck AppUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Yankees MenuUITests";
+			path = "On Deck AppUITests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +75,9 @@
 		22272C962F81F4C70043973F = {
 			isa = PBXGroup;
 			children = (
-				22272CA12F81F4C70043973F /* Yankees Menu */,
-				22272CAF2F81F4C80043973F /* Yankees MenuTests */,
-				22272CB92F81F4C80043973F /* Yankees MenuUITests */,
+				22272CA12F81F4C70043973F /* On Deck App */,
+				22272CAF2F81F4C80043973F /* On Deck AppTests */,
+				22272CB92F81F4C80043973F /* On Deck AppUITests */,
 				22272CA02F81F4C70043973F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,9 +85,9 @@
 		22272CA02F81F4C70043973F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				22272C9F2F81F4C70043973F /* Yankees Menu.app */,
-				22272CAC2F81F4C80043973F /* Yankees MenuTests.xctest */,
-				22272CB62F81F4C80043973F /* Yankees MenuUITests.xctest */,
+				22272C9F2F81F4C70043973F /* On Deck App.app */,
+				22272CAC2F81F4C80043973F /* On Deck AppTests.xctest */,
+				22272CB62F81F4C80043973F /* On Deck AppUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +95,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		22272C9E2F81F4C70043973F /* Yankees Menu */ = {
+		22272C9E2F81F4C70043973F /* On Deck App */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 22272CC02F81F4C80043973F /* Build configuration list for PBXNativeTarget "Yankees Menu" */;
+			buildConfigurationList = 22272CC02F81F4C80043973F /* Build configuration list for PBXNativeTarget "On Deck App" */;
 			buildPhases = (
 				22272C9B2F81F4C70043973F /* Sources */,
 				22272C9C2F81F4C70043973F /* Frameworks */,
@@ -108,18 +108,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				22272CA12F81F4C70043973F /* Yankees Menu */,
+				22272CA12F81F4C70043973F /* On Deck App */,
 			);
-			name = "Yankees Menu";
+			name = "On Deck App";
 			packageProductDependencies = (
 			);
-			productName = "Yankees Menu";
-			productReference = 22272C9F2F81F4C70043973F /* Yankees Menu.app */;
+			productName = "On Deck App";
+			productReference = 22272C9F2F81F4C70043973F /* On Deck App.app */;
 			productType = "com.apple.product-type.application";
 		};
-		22272CAB2F81F4C80043973F /* Yankees MenuTests */ = {
+		22272CAB2F81F4C80043973F /* On Deck AppTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 22272CC32F81F4C80043973F /* Build configuration list for PBXNativeTarget "Yankees MenuTests" */;
+			buildConfigurationList = 22272CC32F81F4C80043973F /* Build configuration list for PBXNativeTarget "On Deck AppTests" */;
 			buildPhases = (
 				22272CA82F81F4C80043973F /* Sources */,
 				22272CA92F81F4C80043973F /* Frameworks */,
@@ -131,18 +131,18 @@
 				22272CAE2F81F4C80043973F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				22272CAF2F81F4C80043973F /* Yankees MenuTests */,
+				22272CAF2F81F4C80043973F /* On Deck AppTests */,
 			);
-			name = "Yankees MenuTests";
+			name = "On Deck AppTests";
 			packageProductDependencies = (
 			);
-			productName = "Yankees MenuTests";
-			productReference = 22272CAC2F81F4C80043973F /* Yankees MenuTests.xctest */;
+			productName = "On Deck AppTests";
+			productReference = 22272CAC2F81F4C80043973F /* On Deck AppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		22272CB52F81F4C80043973F /* Yankees MenuUITests */ = {
+		22272CB52F81F4C80043973F /* On Deck AppUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 22272CC62F81F4C80043973F /* Build configuration list for PBXNativeTarget "Yankees MenuUITests" */;
+			buildConfigurationList = 22272CC62F81F4C80043973F /* Build configuration list for PBXNativeTarget "On Deck AppUITests" */;
 			buildPhases = (
 				22272CB22F81F4C80043973F /* Sources */,
 				22272CB32F81F4C80043973F /* Frameworks */,
@@ -154,13 +154,13 @@
 				22272CB82F81F4C80043973F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				22272CB92F81F4C80043973F /* Yankees MenuUITests */,
+				22272CB92F81F4C80043973F /* On Deck AppUITests */,
 			);
-			name = "Yankees MenuUITests";
+			name = "On Deck AppUITests";
 			packageProductDependencies = (
 			);
-			productName = "Yankees MenuUITests";
-			productReference = 22272CB62F81F4C80043973F /* Yankees MenuUITests.xctest */;
+			productName = "On Deck AppUITests";
+			productReference = 22272CB62F81F4C80043973F /* On Deck AppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 22272C9A2F81F4C70043973F /* Build configuration list for PBXProject "Yankees Menu" */;
+			buildConfigurationList = 22272C9A2F81F4C70043973F /* Build configuration list for PBXProject "On Deck App" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -200,9 +200,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				22272C9E2F81F4C70043973F /* Yankees Menu */,
-				22272CAB2F81F4C80043973F /* Yankees MenuTests */,
-				22272CB52F81F4C80043973F /* Yankees MenuUITests */,
+				22272C9E2F81F4C70043973F /* On Deck App */,
+				22272CAB2F81F4C80043973F /* On Deck AppTests */,
+				22272CB52F81F4C80043973F /* On Deck AppUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -258,12 +258,12 @@
 /* Begin PBXTargetDependency section */
 		22272CAE2F81F4C80043973F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 22272C9E2F81F4C70043973F /* Yankees Menu */;
+			target = 22272C9E2F81F4C70043973F /* On Deck App */;
 			targetProxy = 22272CAD2F81F4C80043973F /* PBXContainerItemProxy */;
 		};
 		22272CB82F81F4C80043973F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 22272C9E2F81F4C70043973F /* Yankees Menu */;
+			target = 22272C9E2F81F4C70043973F /* On Deck App */;
 			targetProxy = 22272CB72F81F4C80043973F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -393,7 +393,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = "Yankees Menu/Yankees Menu.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "On Deck App/On Deck App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -415,7 +415,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.Yankees-Menu";
+				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.OnDeckApp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -439,7 +439,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = "Yankees Menu/Yankees Menu.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "On Deck App/On Deck App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -461,7 +461,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.Yankees-Menu";
+				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.OnDeckApp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -488,14 +488,14 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.3;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.Yankees-MenuTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.OnDeckAppTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Yankees Menu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Yankees Menu";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/On Deck App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/On Deck App";
 			};
 			name = Debug;
 		};
@@ -508,14 +508,14 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.3;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.Yankees-MenuTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.OnDeckAppTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Yankees Menu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Yankees Menu";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/On Deck App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/On Deck App";
 			};
 			name = Release;
 		};
@@ -526,14 +526,14 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.Yankees-MenuUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.OnDeckAppUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "Yankees Menu";
+				TEST_TARGET_NAME = "On Deck App";
 			};
 			name = Debug;
 		};
@@ -544,21 +544,21 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.Yankees-MenuUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "robtl400.OnDeckAppUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "Yankees Menu";
+				TEST_TARGET_NAME = "On Deck App";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		22272C9A2F81F4C70043973F /* Build configuration list for PBXProject "Yankees Menu" */ = {
+		22272C9A2F81F4C70043973F /* Build configuration list for PBXProject "On Deck App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				22272CBE2F81F4C80043973F /* Debug */,
@@ -567,7 +567,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		22272CC02F81F4C80043973F /* Build configuration list for PBXNativeTarget "Yankees Menu" */ = {
+		22272CC02F81F4C80043973F /* Build configuration list for PBXNativeTarget "On Deck App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				22272CC12F81F4C80043973F /* Debug */,
@@ -576,7 +576,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		22272CC32F81F4C80043973F /* Build configuration list for PBXNativeTarget "Yankees MenuTests" */ = {
+		22272CC32F81F4C80043973F /* Build configuration list for PBXNativeTarget "On Deck AppTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				22272CC42F81F4C80043973F /* Debug */,
@@ -585,7 +585,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		22272CC62F81F4C80043973F /* Build configuration list for PBXNativeTarget "Yankees MenuUITests" */ = {
+		22272CC62F81F4C80043973F /* Build configuration list for PBXNativeTarget "On Deck AppUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				22272CC72F81F4C80043973F /* Debug */,

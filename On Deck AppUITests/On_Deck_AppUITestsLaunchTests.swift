@@ -1,13 +1,13 @@
 //
-//  Yankees_MenuUITestsLaunchTests.swift
-//  Yankees MenuUITests
+//  On_Deck_AppUITestsLaunchTests.swift
+//  On Deck AppUITests
 //
 //  Created by Robert Lord on 4/4/26.
 //
 
 import XCTest
 
-final class Yankees_MenuUITestsLaunchTests: XCTestCase {
+final class On_Deck_AppUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         false

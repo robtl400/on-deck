@@ -1,5 +1,5 @@
 import XCTest
-@testable import Yankees_Menu
+@testable import On_Deck_App
 
 final class TitleFormattingTests: XCTestCase {
 
