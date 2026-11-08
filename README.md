@@ -6,12 +6,12 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 
 - **Live scores** in the menu bar — updates every 30 seconds during active games
 - **All game states** handled: upcoming, live, final, postponed, next-game, off-season
-- **Team logos** replace text abbreviations in the status bar display
-- **Standings popover** — click the menu bar item to open a full 30-team standings grid with today's game status for every team
+- **Team logos** replace text abbreviations in the status bar display; logos are fetched from MLB's static asset host on first use and cached locally, so none are bundled with the app
+- **Standings popover** — click the menu bar item to open a full 30-team standings grid with today's game status for every team; doubleheaders show the live or upcoming game once the first is over
 - **Follow any team** — pick from all 30 MLB teams, organized by division; selection persists across launches
 - **Launch at Login** toggle via the settings gear menu
 - **Sleep resilience** — re-syncs immediately when the Mac wakes to correct timer drift
-- **Error resilience** — suppresses transient failures; only shows a `·?` indicator after 3 consecutive fetch failures
+- **Error resilience** — suppresses transient failures; only shows a `·?` indicator after 3 consecutive fetch failures, and retries within a minute so a dropped request never stalls a live game
 
 ## Menu Bar Display
 
@@ -19,7 +19,7 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 |---|---|
 | Upcoming | `│ 🔵 vs ⚾ · 7:05 PM │` |
 | Live | `│ ⚾ 3 – 1 🔵 · 7↑ │` |
-| Final | `│ ⚾ 3 – 1 🔵 · W │` |
+| Final (shown for 30 minutes after the game ends) | `│ ⚾ 3 – 1 🔵 · W │` |
 | Postponed | `│ 🔵 vs ⚾ · PPD │` |
 | Next game | `│ 🔵 vs ⚾ · 4/29 · 7:05 PM │` |
 | Off season | `│ 🔵 · Off Season │` |
@@ -27,7 +27,7 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 ## Requirements
 
 - macOS 13 Ventura or later (the Launch at Login toggle uses `SMAppService`, introduced in macOS 13)
-- Xcode 15 or later (to build from source)
+- Xcode 26 or later (to build from source; the project uses the Xcode 16+ project format and Xcode 26 concurrency settings)
 - No third-party dependencies
 
 ## Building
@@ -37,7 +37,7 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 open "On Deck App.xcodeproj"
 ```
 
-Then press **⌘R** to run, or **⌘B** to build. The app uses `NSApp.setActivationPolicy(.accessory)` so it runs as a background/menu-bar-only process with no Dock icon.
+Signing is set to Automatic with no team selected; pick your own team under Signing & Capabilities before running. Then press **⌘R** to run, or **⌘B** to build. The app uses `NSApp.setActivationPolicy(.accessory)` so it runs as a background/menu-bar-only process with no Dock icon.
 
 To build a release binary from the command line:
 
@@ -48,17 +48,19 @@ xcodebuild -project "On Deck App.xcodeproj" \
            -derivedDataPath build
 ```
 
-The compiled app lands at `build/Release/On Deck App.app`.
+The compiled app lands at `build/Build/Products/Release/On Deck App.app`.
 
 ## Architecture
 
 ```
 On Deck App/
-├── main.swift                   # NSApplicationMain entry point
+├── main.swift                   # Entry point (creates NSApplication, runs the loop)
 ├── AppDelegate.swift            # Status bar item, polling loop, popover lifecycle
 ├── GameFetcher.swift            # MLB Stats API client + state machine
-├── Models.swift                 # GameState, TodayGameStatus, team lookup tables
+├── Models.swift                 # GameState, TodayGameStatus, team table, divisions
 ├── StandingsViewController.swift # Standings popover (NSPopover content)
+├── TeamLogoStore.swift          # Runtime logo download + disk cache
+├── TitleFormatter.swift         # Menu bar title layout shared by the app and tests
 └── TeamRowView.swift            # Per-team row in the standings grid
 ```
 
@@ -70,14 +72,16 @@ Timer / wake event
       ▼
 GameFetcher.fetchCurrentState()
       │
-      ├─(Live gamePk cached)──► fetchLiveFeed()  ──► .live / .final_
+      ├─(Live gamePk cached)──► live feed ──► .live / .postponed (suspended)
+      │                                   ──► .final_ for 30 min after the game ends,
+      │                                       then back to the schedule lookup
       │
-      └─(no cached gamePk)───► schedule API
+      └─(no cached gamePk)───► schedule API (yesterday + today)
                                     │
-                                    ├── "Live"    ──► fetchLiveFeed()
+                                    ├── "Live"    ──► live feed
                                     ├── "Preview" ──► .upcoming
-                                    ├── "Final"   ──► fetchNextGame()
-                                    └── (none)    ──► fetchNextGame()
+                                    ├── "Final"   ──► live feed (score + end time)
+                                    └── (none)    ──► next 14 days
                                                            │
                                                       .nextGame / .offSeason
 ```
@@ -88,6 +92,7 @@ GameFetcher.fetchCurrentState()
 |---|---|
 | Live game | 30 seconds |
 | Game starting within 30 minutes | 60 seconds |
+| Fetch error | 60 seconds |
 | All other states | 5 minutes |
 
 ### Standings Popover
@@ -107,9 +112,10 @@ All game data is fetched from the official **MLB Stats API**:
 |---|---|
 | `statsapi.mlb.com/api/v1/schedule` | Today's game, next game lookup |
 | `statsapi.mlb.com/api/v1.1/game/{pk}/feed/live` | Live score + inning |
-| `statsapi.mlb.com/api/v1/standings` | Division standings (W-L records) |
+| `statsapi.mlb.com/api/v1/standings` | Division standings (W-L records); falls back to the previous season before Opening Day |
+| `mlbstatic.com/team-logos/{teamId}.svg` | Team logos, cached in the app's sandboxed Caches folder |
 
-The API is unauthenticated and publicly accessible.
+The API is unauthenticated and publicly accessible. This project is not affiliated with or endorsed by MLB; game data and team logos are the property of MLB and its clubs.
 
 ## Team Selection
 
@@ -123,15 +129,14 @@ Unit tests live in `On Deck AppTests/`. Run them with **⌘U** in Xcode or:
 xcodebuild test \
   -project "On Deck App.xcodeproj" \
   -scheme "On Deck App" \
-  -destination "platform=macOS"
+  -destination "platform=macOS" \
+  -only-testing "On Deck AppTests"
 ```
 
-Key test targets:
-- `TitleFormattingTests` — verifies the plain-text title formatting for all `GameState` variants
-- `On_Deck_AppTests` — integration-level tests for `GameFetcher` parsing logic
+The suite covers the menu bar title layout for every `GameState`, the team table, standings sorting and decoding, game selection priority (live, then earliest upcoming, then final), schedule parsing including doubleheaders, and the merge of today's games with the upcoming week. The same workflow runs on every push via GitHub Actions.
 
 ## Known Limitations
 
-- **Standings on first launch** — if the initial `fetchStandings` call fails (e.g., no network at launch), standings show teams in alphabetical order with no W-L records until a game goes final or the Mac sleeps and wakes.
-- **Doubleheaders** — the first game of a doubleheader is shown; game 2 is picked up after game 1 reaches Final.
+- **Standings on first launch** — if the initial `fetchStandings` call fails (e.g., no network at launch), standings show teams in alphabetical order with no W-L records until the followed team's game goes final or the Mac sleeps and wakes.
+- **Doubleheaders** — game 1 is shown until it has been final for 30 minutes, then game 2 takes over.
 - **No push notifications** — the app polls on a timer; there is no push or background-refresh entitlement.

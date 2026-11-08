@@ -7,9 +7,14 @@ on:
 
 jobs:
   test:
-    runs-on: macos-latest
+    # The project file uses Xcode 26 settings (project format 77, default
+    # MainActor isolation), so the runner and Xcode are pinned rather than
+    # taking whatever macos-latest ships.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
       - name: Run unit tests
         run: |
           xcodebuild test \

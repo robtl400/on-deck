@@ -10,9 +10,7 @@
 
 **Cons:** One extra timer to manage. Low priority since the failure window is small.
 
-**Context:** Design doc chose "launch + wake + on-Final" as the three re-fetch triggers. A retry-after-5min would be a fourth trigger. Add to `handleWake`-equivalent logic or a separate `retryStandingsIfNeeded()` called from `scheduleNextRefresh`. Relevant after the popover redesign lands.
-
-**Depends on:** Popover redesign.
+**Context:** Design doc chose "launch + wake + on-Final" as the three re-fetch triggers. A retry-after-5min would be a fourth trigger. Add to `handleWake`-equivalent logic or a separate `retryStandingsIfNeeded()` called from `scheduleNextRefresh`.
 
 ---
 
@@ -27,5 +25,3 @@
 **Cons:** May feel over-engineered for a personal utility. Network is usually fast enough that the loading state is imperceptible. Apple's native apps often tolerate this gap silently.
 
 **Context:** The `—` placeholder is the correct idle state (Pass 2 spec). This TODO is purely about signaling the transition from "loading" to "loaded." Options: small `NSProgressIndicator` (spinning, 12pt) in the gear button area while `latestTodayGames == nil`; or a "Updating…" subtitle in the header that hides once data arrives.
-
-**Depends on:** Popover redesign.

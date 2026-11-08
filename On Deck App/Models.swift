@@ -3,135 +3,74 @@ import Cocoa
 let defaultTeamId = 147
 
 enum GameState {
-    case upcoming(opponent: String, opponentId: Int, isHome: Bool, time: Date)
+    case upcoming(opponentId: Int, isHome: Bool, time: Date)
     case live(awayAbbr: String, awayId: Int, awayRuns: Int,
               homeAbbr: String, homeId: Int, homeRuns: Int,
               inning: Int, isTopInning: Bool)
     case final_(awayAbbr: String, awayId: Int, awayRuns: Int,
                 homeAbbr: String, homeId: Int, homeRuns: Int)
-    case postponed(opponent: String, opponentId: Int, isHome: Bool)
-    case nextGame(opponent: String, opponentId: Int, isHome: Bool, date: Date)
+    case postponed(opponentId: Int, isHome: Bool)
+    case nextGame(opponentId: Int, isHome: Bool, date: Date)
     case offSeason
     case error
 }
 
-// MARK: - Team abbreviations (all 30 MLB teams)
+// MARK: - Teams (all 30 MLB clubs, keyed by MLB Stats API team id)
 
-func teamAbbreviation(_ name: String) -> String {
-    let table: [String: String] = [
-        "Arizona Diamondbacks": "ARI",
-        "Atlanta Braves":       "ATL",
-        "Baltimore Orioles":    "BAL",
-        "Boston Red Sox":       "BOS",
-        "Chicago Cubs":         "CHC",
-        "Chicago White Sox":    "CWS",
-        "Cincinnati Reds":      "CIN",
-        "Cleveland Guardians":  "CLE",
-        "Colorado Rockies":     "COL",
-        "Detroit Tigers":       "DET",
-        "Houston Astros":       "HOU",
-        "Kansas City Royals":   "KC",
-        "Los Angeles Angels":   "LAA",
-        "Los Angeles Dodgers":  "LAD",
-        "Miami Marlins":        "MIA",
-        "Milwaukee Brewers":    "MIL",
-        "Minnesota Twins":      "MIN",
-        "New York Mets":        "NYM",
-        "New York Yankees":     "NYY",
-        "Oakland Athletics":    "OAK",
-        "Athletics":            "ATH",
-        "Philadelphia Phillies":"PHI",
-        "Pittsburgh Pirates":   "PIT",
-        "San Diego Padres":     "SD",
-        "San Francisco Giants": "SF",
-        "Seattle Mariners":     "SEA",
-        "St. Louis Cardinals":  "STL",
-        "Tampa Bay Rays":       "TB",
-        "Texas Rangers":        "TEX",
-        "Toronto Blue Jays":    "TOR",
-        "Washington Nationals": "WSH",
-    ]
-    if let abbr = table[name] { return abbr }
-    // Fallback: first letter of each word, max 3 chars
-    return name.split(separator: " ").prefix(3).map { String($0.prefix(1)) }.joined()
+struct MLBTeam {
+    let id: Int
+    let abbreviation: String   // official MLB abbreviation, e.g. "NYY"
+    let name: String           // full name, e.g. "New York Yankees"
+    let nickname: String       // e.g. "Yankees"
 }
 
-// MARK: - Official MLB abbreviations (all 30 teams, by team ID)
-// Used as a fallback when the schedule API doesn't return abbreviation in the response.
+let mlbTeams: [Int: MLBTeam] = Dictionary(uniqueKeysWithValues: [
+    MLBTeam(id: 108, abbreviation: "LAA", name: "Los Angeles Angels", nickname: "Angels"),
+    MLBTeam(id: 109, abbreviation: "ARI", name: "Arizona Diamondbacks", nickname: "Diamondbacks"),
+    MLBTeam(id: 110, abbreviation: "BAL", name: "Baltimore Orioles", nickname: "Orioles"),
+    MLBTeam(id: 111, abbreviation: "BOS", name: "Boston Red Sox", nickname: "Red Sox"),
+    MLBTeam(id: 112, abbreviation: "CHC", name: "Chicago Cubs", nickname: "Cubs"),
+    MLBTeam(id: 113, abbreviation: "CIN", name: "Cincinnati Reds", nickname: "Reds"),
+    MLBTeam(id: 114, abbreviation: "CLE", name: "Cleveland Guardians", nickname: "Guardians"),
+    MLBTeam(id: 115, abbreviation: "COL", name: "Colorado Rockies", nickname: "Rockies"),
+    MLBTeam(id: 116, abbreviation: "DET", name: "Detroit Tigers", nickname: "Tigers"),
+    MLBTeam(id: 117, abbreviation: "HOU", name: "Houston Astros", nickname: "Astros"),
+    MLBTeam(id: 118, abbreviation: "KC", name: "Kansas City Royals", nickname: "Royals"),
+    MLBTeam(id: 119, abbreviation: "LAD", name: "Los Angeles Dodgers", nickname: "Dodgers"),
+    MLBTeam(id: 120, abbreviation: "WSH", name: "Washington Nationals", nickname: "Nationals"),
+    MLBTeam(id: 121, abbreviation: "NYM", name: "New York Mets", nickname: "Mets"),
+    MLBTeam(id: 133, abbreviation: "ATH", name: "Athletics", nickname: "Athletics"),
+    MLBTeam(id: 134, abbreviation: "PIT", name: "Pittsburgh Pirates", nickname: "Pirates"),
+    MLBTeam(id: 135, abbreviation: "SD", name: "San Diego Padres", nickname: "Padres"),
+    MLBTeam(id: 136, abbreviation: "SEA", name: "Seattle Mariners", nickname: "Mariners"),
+    MLBTeam(id: 137, abbreviation: "SF", name: "San Francisco Giants", nickname: "Giants"),
+    MLBTeam(id: 138, abbreviation: "STL", name: "St. Louis Cardinals", nickname: "Cardinals"),
+    MLBTeam(id: 139, abbreviation: "TB", name: "Tampa Bay Rays", nickname: "Rays"),
+    MLBTeam(id: 140, abbreviation: "TEX", name: "Texas Rangers", nickname: "Rangers"),
+    MLBTeam(id: 141, abbreviation: "TOR", name: "Toronto Blue Jays", nickname: "Blue Jays"),
+    MLBTeam(id: 142, abbreviation: "MIN", name: "Minnesota Twins", nickname: "Twins"),
+    MLBTeam(id: 143, abbreviation: "PHI", name: "Philadelphia Phillies", nickname: "Phillies"),
+    MLBTeam(id: 144, abbreviation: "ATL", name: "Atlanta Braves", nickname: "Braves"),
+    MLBTeam(id: 145, abbreviation: "CWS", name: "Chicago White Sox", nickname: "White Sox"),
+    MLBTeam(id: 146, abbreviation: "MIA", name: "Miami Marlins", nickname: "Marlins"),
+    MLBTeam(id: 147, abbreviation: "NYY", name: "New York Yankees", nickname: "Yankees"),
+    MLBTeam(id: 158, abbreviation: "MIL", name: "Milwaukee Brewers", nickname: "Brewers"),
+].map { ($0.id, $0) })
 
+/// Official abbreviation; also the text fallback wherever a logo has not loaded.
+/// Returns "MLB" for unrecognised ids.
 func mlbAbbreviation(for teamId: Int) -> String {
-    let table: [Int: String] = [
-        108: "LAA",   // Los Angeles Angels
-        109: "ARI",   // Arizona Diamondbacks
-        110: "BAL",   // Baltimore Orioles
-        111: "BOS",   // Boston Red Sox
-        112: "CHC",   // Chicago Cubs
-        113: "CIN",   // Cincinnati Reds
-        114: "CLE",   // Cleveland Guardians
-        115: "COL",   // Colorado Rockies
-        116: "DET",   // Detroit Tigers
-        117: "HOU",   // Houston Astros
-        118: "KC",    // Kansas City Royals
-        119: "LAD",   // Los Angeles Dodgers
-        120: "WSH",   // Washington Nationals
-        121: "NYM",   // New York Mets
-        133: "ATH",   // Athletics
-        134: "PIT",   // Pittsburgh Pirates
-        135: "SD",    // San Diego Padres
-        136: "SEA",   // Seattle Mariners
-        137: "SF",    // San Francisco Giants
-        138: "STL",   // St. Louis Cardinals
-        139: "TB",    // Tampa Bay Rays
-        140: "TEX",   // Texas Rangers
-        141: "TOR",   // Toronto Blue Jays
-        142: "MIN",   // Minnesota Twins
-        143: "PHI",   // Philadelphia Phillies
-        144: "ATL",   // Atlanta Braves
-        145: "CWS",   // Chicago White Sox
-        146: "MIA",   // Miami Marlins
-        147: "NYY",   // New York Yankees
-        158: "MIL",   // Milwaukee Brewers
-    ]
-    return table[teamId] ?? "MLB"
+    mlbTeams[teamId]?.abbreviation ?? "MLB"
 }
 
-// MARK: - ESPN logo codes (all 30 MLB teams)
-// Used to load Assets.xcassets imagesets named "logo-{code}".
+/// Full display name. Returns "Unknown Team" for unrecognised ids so callers never crash.
+func teamName(for teamId: Int) -> String {
+    mlbTeams[teamId]?.name ?? "Unknown Team"
+}
 
-func espnCode(for teamId: Int) -> String {
-    let table: [Int: String] = [
-        108: "laa",   // Los Angeles Angels
-        109: "ari",   // Arizona Diamondbacks
-        110: "bal",   // Baltimore Orioles
-        111: "bos",   // Boston Red Sox
-        112: "chc",   // Chicago Cubs
-        113: "cin",   // Cincinnati Reds
-        114: "cle",   // Cleveland Guardians
-        115: "col",   // Colorado Rockies
-        116: "det",   // Detroit Tigers
-        117: "hou",   // Houston Astros
-        118: "kc",    // Kansas City Royals
-        119: "lad",   // Los Angeles Dodgers
-        120: "wsh",   // Washington Nationals
-        121: "nym",   // New York Mets
-        133: "oak",   // Athletics (ESPN CDN still uses "oak")
-        134: "pit",   // Pittsburgh Pirates
-        135: "sd",    // San Diego Padres
-        136: "sea",   // Seattle Mariners
-        137: "sf",    // San Francisco Giants
-        138: "stl",   // St. Louis Cardinals
-        139: "tb",    // Tampa Bay Rays
-        140: "tex",   // Texas Rangers
-        141: "tor",   // Toronto Blue Jays
-        142: "min",   // Minnesota Twins
-        143: "phi",   // Philadelphia Phillies
-        144: "atl",   // Atlanta Braves
-        145: "cws",   // Chicago White Sox
-        146: "mia",   // Miami Marlins
-        147: "nyy",   // New York Yankees
-        158: "mil",   // Milwaukee Brewers
-    ]
-    return table[teamId] ?? "mlb"  // fallback: generic MLB logo
+/// Nickname only, for the standings popover where the logo supplies city context.
+func teamNickname(for teamId: Int) -> String {
+    mlbTeams[teamId]?.nickname ?? teamName(for: teamId)
 }
 
 // MARK: - Division standings
@@ -139,69 +78,23 @@ func espnCode(for teamId: Int) -> String {
 struct MLBDivision {
     let id: Int         // MLB Stats API division ID
     let name: String    // "AL East", "NL West", etc.
-    let leagueId: Int   // 103 = AL, 104 = NL
-    let geoTier: Int    // 0 = East, 1 = Central, 2 = West
     let teamIds: [Int]  // in alphabetical name order
 }
 
 let mlbDivisions: [MLBDivision] = [
     MLBDivision(id: 201, name: "AL East",
-                leagueId: 103, geoTier: 0,
                 teamIds: [110, 111, 147, 139, 141]),  // BAL, BOS, NYY, TB, TOR
     MLBDivision(id: 202, name: "AL Central",
-                leagueId: 103, geoTier: 1,
                 teamIds: [145, 114, 116, 118, 142]),  // CWS, CLE, DET, KC, MIN
     MLBDivision(id: 200, name: "AL West",
-                leagueId: 103, geoTier: 2,
                 teamIds: [108, 133, 117, 136, 140]),  // LAA, ATH, HOU, SEA, TEX
     MLBDivision(id: 204, name: "NL East",
-                leagueId: 104, geoTier: 0,
                 teamIds: [144, 146, 121, 143, 120]),  // ATL, MIA, NYM, PHI, WSH
     MLBDivision(id: 205, name: "NL Central",
-                leagueId: 104, geoTier: 1,
                 teamIds: [112, 113, 158, 134, 138]),  // CHC, CIN, MIL, PIT, STL
     MLBDivision(id: 203, name: "NL West",
-                leagueId: 104, geoTier: 2,
                 teamIds: [109, 115, 119, 135, 137]),  // ARI, COL, LAD, SD, SF
 ]
-
-/// teamId → full display name (e.g. "New York Yankees").
-/// Returns "Unknown Team" for unrecognised IDs — callers don't crash.
-func teamName(for teamId: Int) -> String {
-    let table: [Int: String] = [
-        108: "Los Angeles Angels",
-        109: "Arizona Diamondbacks",
-        110: "Baltimore Orioles",
-        111: "Boston Red Sox",
-        112: "Chicago Cubs",
-        113: "Cincinnati Reds",
-        114: "Cleveland Guardians",
-        115: "Colorado Rockies",
-        116: "Detroit Tigers",
-        117: "Houston Astros",
-        118: "Kansas City Royals",
-        119: "Los Angeles Dodgers",
-        120: "Washington Nationals",
-        121: "New York Mets",
-        133: "Athletics",
-        134: "Pittsburgh Pirates",
-        135: "San Diego Padres",
-        136: "Seattle Mariners",
-        137: "San Francisco Giants",
-        138: "St. Louis Cardinals",
-        139: "Tampa Bay Rays",
-        140: "Texas Rangers",
-        141: "Toronto Blue Jays",
-        142: "Minnesota Twins",
-        143: "Philadelphia Phillies",
-        144: "Atlanta Braves",
-        145: "Chicago White Sox",
-        146: "Miami Marlins",
-        147: "New York Yankees",
-        158: "Milwaukee Brewers",
-    ]
-    return table[teamId] ?? "Unknown Team"
-}
 
 /// teamId → (wins, losses). Populated by fetchStandings.
 typealias TeamRecords = [Int: (wins: Int, losses: Int)]
@@ -274,64 +167,41 @@ func gameInfoString(for status: TodayGameStatus) -> String {
 
 // MARK: - Logo image (shared between AppDelegate status bar and standings popover)
 
-/// Loads a team logo from Assets.xcassets at the given size.
-/// Returns nil if the asset is missing.
+/// Returns the team logo at the given size, or nil while `TeamLogoStore`
+/// is still downloading it. Observe `TeamLogoStore.didLoadLogo` to redraw.
 func logoImage(for teamId: Int, size: NSSize = NSSize(width: 18, height: 18)) -> NSImage? {
-    let code = espnCode(for: teamId)
-    guard let img = NSImage(named: "logo-\(code)") else { return nil }
-    let copy = img.copy() as! NSImage
-    copy.isTemplate = false
-    copy.size = size
-    return copy
-}
-
-/// teamId → team nickname only (e.g. "Orioles", "Yankees").
-/// Used in the standings popover where the logo already supplies city context.
-func teamNickname(for teamId: Int) -> String {
-    let table: [Int: String] = [
-        108: "Angels",
-        109: "Diamondbacks",
-        110: "Orioles",
-        111: "Red Sox",
-        112: "Cubs",
-        113: "Reds",
-        114: "Guardians",
-        115: "Rockies",
-        116: "Tigers",
-        117: "Astros",
-        118: "Royals",
-        119: "Dodgers",
-        120: "Nationals",
-        121: "Mets",
-        133: "Athletics",
-        134: "Pirates",
-        135: "Padres",
-        136: "Mariners",
-        137: "Giants",
-        138: "Cardinals",
-        139: "Rays",
-        140: "Rangers",
-        141: "Blue Jays",
-        142: "Twins",
-        143: "Phillies",
-        144: "Braves",
-        145: "White Sox",
-        146: "Marlins",
-        147: "Yankees",
-        158: "Brewers",
-    ]
-    return table[teamId] ?? teamName(for: teamId)
+    guard let img = TeamLogoStore.shared.image(for: teamId) else { return nil }
+    // MLB's logos are not square: aspect-fit onto a square canvas so callers
+    // can lay them out at a fixed size without stretching.
+    let source = img.size
+    guard source.width > 0, source.height > 0 else { return nil }
+    let scale = min(size.width / source.width, size.height / source.height)
+    let fitted = NSSize(width: source.width * scale, height: source.height * scale)
+    let origin = NSPoint(x: (size.width - fitted.width) / 2, y: (size.height - fitted.height) / 2)
+    let canvas = NSImage(size: size, flipped: false) { _ in
+        img.draw(in: NSRect(origin: origin, size: fitted))
+        return true
+    }
+    canvas.isTemplate = false
+    return canvas
 }
 
 // MARK: - Standings sort helpers
 
 /// Returns teamIds in the given division sorted by win percentage descending.
-/// Falls back to stable original order when standings are nil or a team is missing.
+/// Ties, and teams without a record, keep their original (alphabetical) order;
+/// teams without a record sort after teams that have one.
 func teamsSortedByWinPct(in division: MLBDivision, standings: TeamRecords?) -> [Int] {
-    division.teamIds.sorted { a, b in
-        guard let ra = standings?[a], let rb = standings?[b] else { return false }
-        let wpA = Double(ra.wins) / Double(max(1, ra.wins + ra.losses))
-        let wpB = Double(rb.wins) / Double(max(1, rb.wins + rb.losses))
-        return wpA > wpB
+    func winPct(_ id: Int) -> Double? {
+        guard let r = standings?[id] else { return nil }
+        return Double(r.wins) / Double(max(1, r.wins + r.losses))
     }
+    return division.teamIds.enumerated().sorted { a, b in
+        switch (winPct(a.element), winPct(b.element)) {
+        case let (pa?, pb?) where pa != pb: return pa > pb
+        case (.some, .none):                 return true
+        case (.none, .some):                 return false
+        default:                             return a.offset < b.offset
+        }
+    }.map { $0.element }
 }

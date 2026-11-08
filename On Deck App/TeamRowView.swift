@@ -36,9 +36,11 @@ final class TeamRowView: NSView {
 
     // MARK: - Init
 
+    static let rowWidth: CGFloat = 319
+
     init(teamId: Int) {
         self.teamId = teamId
-        super.init(frame: NSRect(x: 0, y: 0, width: 319, height: 24))
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.rowWidth, height: 24))
         setup()
     }
 

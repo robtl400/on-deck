@@ -49,6 +49,10 @@ final class StandingsViewController: NSViewController {
         view.wantsLayer = true
         applyBackground()
         buildLayout()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleLogoLoaded(_:)),
+            name: TeamLogoStore.didLoadLogo, object: nil)
+
         appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
             self?.applyBackground()
         }
@@ -119,12 +123,12 @@ final class StandingsViewController: NSViewController {
         let bar = NSView()
         bar.wantsLayer = true
 
-        // "AMERICAN LEAGUE" label — centered in left 280pt
+        // "AMERICAN LEAGUE" label — centered over the left column
         let alLabel = makeLeagueLabel("AMERICAN LEAGUE")
         alLabel.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(alLabel)
 
-        // "NATIONAL LEAGUE" label — centered in middle 244pt
+        // "NATIONAL LEAGUE" label — centered over the right column
         let nlLabel = makeLeagueLabel("NATIONAL LEAGUE")
         nlLabel.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(nlLabel)
@@ -207,7 +211,7 @@ final class StandingsViewController: NSViewController {
                 sep.layer?.backgroundColor = NSColor.separatorColor.cgColor
                 stack.addArrangedSubview(sep)
                 NSLayoutConstraint.activate([
-                    sep.widthAnchor.constraint(equalToConstant: 319),
+                    sep.widthAnchor.constraint(equalToConstant: TeamRowView.rowWidth),
                     sep.heightAnchor.constraint(equalToConstant: 1),
                 ])
             }
@@ -216,7 +220,7 @@ final class StandingsViewController: NSViewController {
             let headerView = makeDivisionHeader(division.name, isFirst: i == 0)
             stack.addArrangedSubview(headerView)
             NSLayoutConstraint.activate([
-                headerView.widthAnchor.constraint(equalToConstant: 319),
+                headerView.widthAnchor.constraint(equalToConstant: TeamRowView.rowWidth),
             ])
 
             // Per-division team stack — stored so update(standings:) can reorder it.
@@ -226,7 +230,7 @@ final class StandingsViewController: NSViewController {
             teamStack.spacing = 0
             stack.addArrangedSubview(teamStack)
             NSLayoutConstraint.activate([
-                teamStack.widthAnchor.constraint(equalToConstant: 319),
+                teamStack.widthAnchor.constraint(equalToConstant: TeamRowView.rowWidth),
             ])
             divisionTeamStacks[division.id] = teamStack
 
@@ -236,7 +240,7 @@ final class StandingsViewController: NSViewController {
                 let row = makeTeamRow(teamId: teamId, rank: index + 1)
                 teamStack.addArrangedSubview(row)
                 NSLayoutConstraint.activate([
-                    row.widthAnchor.constraint(equalToConstant: 319),
+                    row.widthAnchor.constraint(equalToConstant: TeamRowView.rowWidth),
                 ])
                 rowViews[teamId] = row
             }
@@ -246,7 +250,7 @@ final class StandingsViewController: NSViewController {
         let bottomSpacer = NSView()
         stack.addArrangedSubview(bottomSpacer)
         NSLayoutConstraint.activate([
-            bottomSpacer.widthAnchor.constraint(equalToConstant: 319),
+            bottomSpacer.widthAnchor.constraint(equalToConstant: TeamRowView.rowWidth),
             bottomSpacer.heightAnchor.constraint(equalToConstant: 8),
         ])
 
@@ -281,7 +285,7 @@ final class StandingsViewController: NSViewController {
         container.addSubview(label)
 
         // W / L column headers — positioned to align with TeamRowView's record columns.
-        // Offsets derived from TeamRowView trailing arithmetic (row width 319):
+        // Offsets derived from TeamRowView trailing arithmetic (row width TeamRowView.rowWidth = 319):
         //   winsLabel:   319 - 8(margin) - 20(losses) - 8(dash) - 20(wins) = 263 leading
         //   lossesLabel: 319 - 8(margin) - 20(losses)                      = 291 leading
         // If TeamRowView's record widths or trailing margin change, update these too.
@@ -346,6 +350,11 @@ final class StandingsViewController: NSViewController {
     }
 
     // MARK: - In-place data updates
+
+    @objc private func handleLogoLoaded(_ note: Notification) {
+        guard let teamId = note.userInfo?["teamId"] as? Int else { return }
+        rowViews[teamId]?.setLogo(logoImage(for: teamId, size: NSSize(width: 16, height: 16)))
+    }
 
     func update(games: [Int: TodayGameStatus]) {
         latestGames = games

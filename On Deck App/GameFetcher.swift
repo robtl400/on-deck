@@ -14,7 +14,6 @@ private struct ScheduleDate: Decodable {
 private struct ScheduleGame: Decodable {
     let gamePk: Int
     let gameDate: String          // ISO-8601 UTC, e.g. "2026-04-04T23:05:00Z"
-    let officialDate: String      // "2026-04-04"
     let status: GameStatus
     let teams: ScheduleTeams
 }
@@ -36,7 +35,6 @@ private struct ScheduleTeamEntry: Decodable {
 
 private struct TeamRef: Decodable {
     let id: Int
-    let name: String
 }
 
 // MARK: - Live feed models
@@ -49,6 +47,13 @@ private struct LiveFeedResponse: Decodable {
 private struct LiveGameData: Decodable {
     let status: GameStatus
     let teams: LiveTeams
+    let gameInfo: LiveGameInfo?
+}
+
+private struct LiveGameInfo: Decodable {
+    let firstPitch: String?
+    let gameDurationMinutes: Int?
+    let delayDurationMinutes: Int?
 }
 
 private struct LiveTeams: Decodable {
@@ -83,31 +88,45 @@ private struct LinescoreTeamRuns: Decodable {
 // MARK: - GameFetcher
 
 /*
- State machine:
+ State machine (all callbacks on the main queue):
 
-   launch
+   poll
      │
-     ▼
- schedule request ──(Live game found)──► set activeGamePk
-     │                                         │
-     │(no game / Final / Preview)              ▼
-     ▼                                   live feed request ──(Final)──► clear activeGamePk
- resolve state                                 │                               │
-     │                                     (Live)                        back to schedule
-     ▼                                         ▼                          on next poll
- emit GameState                         emit .live / .final_
+     ├─(activeGamePk set)──► live feed ──(Live)──────────► .live
+     │                                 ──(Suspended)─────► .postponed, clear activeGamePk
+     │                                 ──(Final, recent)─► .final_ for finalDisplayWindow
+     │                                 ──(Final, older)──► clear activeGamePk, exclude game, re-poll
+     │
+     └─(no active game)──► schedule yesterday..today
+                              ├── Live     ──► set activeGamePk, live feed (above)
+                              ├── Preview  ──► .upcoming
+                              ├── Final    ──► live feed (above, for scores + end time)
+                              └── nothing  ──► next 14 days ──► .nextGame / .offSeason
  */
 final class GameFetcher {
 
-    // Tracks the current game across polls to avoid midnight/date-boundary issues.
-    // Cleared when the game reaches Final so doubleheader game 2 is picked up correctly.
+    /// How long a final score stays in the menu bar after the game ends.
+    static let finalDisplayWindow: TimeInterval = 30 * 60
+
+    // Tracks the current game across polls so a game that runs past local
+    // midnight keeps updating. Cleared when the game ends or is suspended.
     private var activeGamePk: Int? = nil
 
-    // The selected team. Changing this clears activeGamePk so the next poll
-    // does a fresh schedule lookup for the new team instead of continuing to
-    // track the previous team's live game.
+    // Games whose final-score window has expired this session; the schedule
+    // lookup skips them so a doubleheader's second game can take over.
+    private var expiredFinals: Set<Int> = []
+
+    // When no end time is available from the API, the first time this session
+    // saw the game as Final stands in for it.
+    private var finalFirstSeen: [Int: Date] = [:]
+
+    // The selected team. Changing it drops the tracked game and any result
+    // still in flight for the previous team.
     var teamId: Int = defaultTeamId {
-        didSet { activeGamePk = nil }
+        didSet {
+            activeGamePk = nil
+            expiredFinals = []
+        }
     }
 
     private let session: URLSession = {
@@ -122,34 +141,87 @@ final class GameFetcher {
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
+    private let isoFractionalFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 
-    // Fetch current game state. Calls completion on an arbitrary background queue.
+    /// Fetches the current game state for `teamId`. Calls completion on the
+    /// main queue. A result for a team that is no longer selected is dropped.
     func fetchCurrentState(completion: @escaping (GameState) -> Void) {
-        // If we're tracking a live game, poll it directly (handles midnight boundaries
-        // and eliminates the redundant schedule call during active games).
-        if let gamePk = activeGamePk {
-            fetchLiveFeed(gamePk: gamePk) { [weak self] state in
-                guard let self else { return }
-                if case .final_ = state {
-                    self.activeGamePk = nil
-                    self.fetchNextGame(after: self.todayOfficialDate(), completion: completion)
-                } else {
-                    completion(state)
-                }
-            }
-            return
+        let requestedTeam = teamId
+        let deliver: (GameState) -> Void = { [weak self] state in
+            guard let self, self.teamId == requestedTeam else { return }
+            completion(state)
         }
 
-        let today = todayOfficialDate()
-        let scheduleURL = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&date=\(today)")!
+        if let gamePk = activeGamePk {
+            fetchLiveFeed(gamePk: gamePk, completion: deliver)
+        } else {
+            lookupSchedule(completion: deliver)
+        }
+    }
 
-        fetch(url: scheduleURL, as: ScheduleResponse.self) { [weak self] result in
+    /// Fetches standings for all 30 teams. Before Opening Day the API returns
+    /// no records for the new season, so the previous season is used instead.
+    /// Calls completion on the main queue.
+    func fetchStandings(season: Int, completion: @escaping (Result<TeamRecords, Error>) -> Void) {
+        fetchStandings(season: season, allowFallback: true, completion: completion)
+    }
+
+    private func fetchStandings(season: Int, allowFallback: Bool,
+                                completion: @escaping (Result<TeamRecords, Error>) -> Void) {
+        let url = URL(string: "\(baseURL)/api/v1/standings?leagueId=103,104&season=\(season)")!
+        fetchData(url: url) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let e):
+                completion(.failure(e))
+            case .success(let data):
+                guard let records = self.parseStandings(from: data) else {
+                    completion(.failure(URLError(.cannotDecodeContentData)))
+                    return
+                }
+                if records.isEmpty, allowFallback {
+                    self.fetchStandings(season: season - 1, allowFallback: false, completion: completion)
+                } else {
+                    completion(.success(records))
+                }
+            }
+        }
+    }
+
+    /// Parses a standings payload into `[teamId: (wins, losses)]`.
+    /// Internal so unit tests can exercise it with fixture JSON.
+    func parseStandings(from data: Data) -> TeamRecords? {
+        guard let response = try? JSONDecoder().decode(StandingsResponse.self, from: data) else { return nil }
+        var records: TeamRecords = [:]
+        for divRecord in response.records {
+            for teamRecord in divRecord.teamRecords {
+                records[teamRecord.team.id] = (teamRecord.wins, teamRecord.losses)
+            }
+        }
+        return records
+    }
+
+    // MARK: - Schedule lookup
+
+    private func lookupSchedule(completion: @escaping (GameState) -> Void) {
+        // Yesterday is included so a game still in progress after local
+        // midnight is found at launch or after a team switch.
+        let today = todayOfficialDate()
+        let yesterday = officialDate(daysFromNow: -1)
+        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&startDate=\(yesterday)&endDate=\(today)")!
+
+        fetch(url: url, as: ScheduleResponse.self) { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure:
                 completion(.error)
             case .success(let response):
-                guard let game = self.pickGame(from: response) else {
+                let games = response.dates.flatMap { $0.games }
+                guard let game = Self.pickGame(from: games, excluding: self.expiredFinals) else {
                     self.fetchNextGame(after: today, completion: completion)
                     return
                 }
@@ -158,85 +230,65 @@ final class GameFetcher {
         }
     }
 
-    /// Fetches current standings for all 30 teams.
-    /// Calls completion on an arbitrary background queue.
-    func fetchStandings(season: Int, completion: @escaping (Result<TeamRecords, Error>) -> Void) {
-        let url = URL(string: "\(baseURL)/api/v1/standings?leagueId=103,104&season=\(season)")!
-        fetch(url: url, as: StandingsResponse.self) { result in
-            switch result {
-            case .failure(let e):
-                completion(.failure(e))
-            case .success(let response):
-                var records: TeamRecords = [:]
-                for divRecord in response.records {
-                    for teamRecord in divRecord.teamRecords {
-                        records[teamRecord.team.id] = (teamRecord.wins, teamRecord.losses)
-                    }
-                }
-                completion(.success(records))
-            }
-        }
-    }
-
-    // MARK: - Private helpers
-
     private func resolveState(from game: ScheduleGame, completion: @escaping (GameState) -> Void) {
-        let state = game.status.abstractGameState
         let detailed = game.status.detailedState ?? ""
 
         if detailed == "Postponed" || detailed.contains("Suspended") {
-            let (opponentName, opponentId, isHome) = opponentInfo(from: game)
-            completion(.postponed(opponent: opponentName, opponentId: opponentId, isHome: isHome))
+            let (opponentId, isHome) = opponentInfo(from: game)
+            completion(.postponed(opponentId: opponentId, isHome: isHome))
             return
         }
 
-        switch state {
+        switch game.status.abstractGameState {
         case "Preview":
             guard let gameDate = isoFormatter.date(from: game.gameDate) else {
                 completion(.error)
                 return
             }
-            let (opponentName, opponentId, isHome) = opponentInfo(from: game)
-            completion(.upcoming(opponent: opponentName, opponentId: opponentId,
-                                 isHome: isHome, time: gameDate))
+            let (opponentId, isHome) = opponentInfo(from: game)
+            completion(.upcoming(opponentId: opponentId, isHome: isHome, time: gameDate))
 
         case "Live":
             activeGamePk = game.gamePk
-            fetchLiveFeed(gamePk: game.gamePk) { [weak self] state in
-                guard let self else { return }
-                if case .final_ = state {
-                    self.activeGamePk = nil
-                    self.fetchNextGame(after: self.todayOfficialDate(), completion: completion)
-                } else {
-                    completion(state)
-                }
-            }
+            fetchLiveFeed(gamePk: game.gamePk, completion: completion)
 
         case "Final":
-            activeGamePk = nil
-            fetchNextGame(after: todayOfficialDate(), completion: completion)
+            // The live feed supplies the final score and the game's end time.
+            fetchLiveFeed(gamePk: game.gamePk, completion: completion)
 
         default:
             completion(.error)
         }
     }
 
+    // MARK: - Live feed
+
     private func fetchLiveFeed(gamePk: Int, completion: @escaping (GameState) -> Void) {
         let url = URL(string: "\(baseURL)/api/v1.1/game/\(gamePk)/feed/live")!
 
-        fetch(url: url, as: LiveFeedResponse.self) { result in
+        fetch(url: url, as: LiveFeedResponse.self) { [weak self] result in
+            guard let self else { return }
             switch result {
             case .failure:
                 completion(.error)
             case .success(let feed):
-                let status = feed.gameData.status.abstractGameState
+                let detailed = feed.gameData.status.detailedState ?? ""
                 let ls = feed.liveData.linescore
                 let awayTeam = feed.gameData.teams.away
                 let homeTeam = feed.gameData.teams.home
                 let awayRuns = ls.teams.away.runs ?? 0
                 let homeRuns = ls.teams.home.runs ?? 0
 
-                switch status {
+                if detailed.contains("Suspended") {
+                    // The API keeps a suspended game in the "Live" state until it
+                    // resumes, which may be days later.
+                    self.activeGamePk = nil
+                    let isHome = homeTeam.id == self.teamId
+                    completion(.postponed(opponentId: isHome ? awayTeam.id : homeTeam.id, isHome: isHome))
+                    return
+                }
+
+                switch feed.gameData.status.abstractGameState {
                 case "Live":
                     completion(.live(
                         awayAbbr: awayTeam.abbreviation, awayId: awayTeam.id, awayRuns: awayRuns,
@@ -244,11 +296,20 @@ final class GameFetcher {
                         inning: ls.currentInning ?? 1,
                         isTopInning: ls.isTopInning ?? true
                     ))
+
                 case "Final":
-                    completion(.final_(
-                        awayAbbr: awayTeam.abbreviation, awayId: awayTeam.id, awayRuns: awayRuns,
-                        homeAbbr: homeTeam.abbreviation, homeId: homeTeam.id, homeRuns: homeRuns
-                    ))
+                    self.activeGamePk = nil
+                    if self.isWithinFinalWindow(gamePk: gamePk, info: feed.gameData.gameInfo) {
+                        completion(.final_(
+                            awayAbbr: awayTeam.abbreviation, awayId: awayTeam.id, awayRuns: awayRuns,
+                            homeAbbr: homeTeam.abbreviation, homeId: homeTeam.id, homeRuns: homeRuns
+                        ))
+                    } else {
+                        // Move on: a doubleheader's second game, or the next scheduled game.
+                        self.expiredFinals.insert(gamePk)
+                        self.lookupSchedule(completion: completion)
+                    }
+
                 default:
                     completion(.error)
                 }
@@ -256,14 +317,28 @@ final class GameFetcher {
         }
     }
 
-    // Find the next scheduled game (looks up to 14 days out).
-    private func fetchNextGame(after today: String, completion: @escaping (GameState) -> Void) {
-        guard let todayDate = Self.officialDateFormatter.date(from: today) else {
-            completion(.offSeason)
-            return
+    /// True while the game's end time is less than `finalDisplayWindow` ago.
+    private func isWithinFinalWindow(gamePk: Int, info: LiveGameInfo?) -> Bool {
+        let ended: Date
+        if let info, let firstPitch = info.firstPitch,
+           let start = isoFractionalFormatter.date(from: firstPitch) ?? isoFormatter.date(from: firstPitch),
+           let duration = info.gameDurationMinutes {
+            ended = start.addingTimeInterval(TimeInterval((duration + (info.delayDurationMinutes ?? 0)) * 60))
+        } else if let seen = finalFirstSeen[gamePk] {
+            ended = seen
+        } else {
+            finalFirstSeen[gamePk] = Date()
+            ended = Date()
         }
-        let endDate = Self.officialDateFormatter.string(
-            from: todayDate.addingTimeInterval(14 * 86400))
+        return Date().timeIntervalSince(ended) < Self.finalDisplayWindow
+    }
+
+    // MARK: - Next game
+
+    // Find the next scheduled game after today (looks up to 14 days out).
+    // Today's own games are handled by the schedule lookup.
+    private func fetchNextGame(after today: String, completion: @escaping (GameState) -> Void) {
+        let endDate = officialDate(daysFromNow: 14)
         let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&startDate=\(today)&endDate=\(endDate)")!
 
         fetch(url: url, as: ScheduleResponse.self) { [weak self] result in
@@ -272,25 +347,24 @@ final class GameFetcher {
             case .failure:
                 completion(.error)
             case .success(let response):
-                for date in response.dates {
-                    guard date.date != today else { continue }
-                    if let game = self.pickGame(from: ScheduleResponse(dates: [date])) {
-                        guard let gameDate = self.isoFormatter.date(from: game.gameDate) else { continue }
-                        let (opponentName, opponentId, isHome) = self.opponentInfo(from: game)
-                        completion(.nextGame(opponent: opponentName, opponentId: opponentId,
-                                            isHome: isHome, date: gameDate))
-                        return
-                    }
+                for date in response.dates where date.date != today {
+                    guard let game = Self.pickGame(from: date.games, excluding: []),
+                          let gameDate = self.isoFormatter.date(from: game.gameDate) else { continue }
+                    let (opponentId, isHome) = self.opponentInfo(from: game)
+                    completion(.nextGame(opponentId: opponentId, isHome: isHome, date: gameDate))
+                    return
                 }
                 completion(.offSeason)
             }
         }
     }
 
-    // Returns today as "YYYY-MM-DD" in local system time, for consistent
-    // today/tomorrow boundary logic with the display layer.
-    private func todayOfficialDate() -> String {
-        Self.officialDateFormatter.string(from: Date())
+    // MARK: - Dates
+
+    private func todayOfficialDate() -> String { officialDate(daysFromNow: 0) }
+
+    private func officialDate(daysFromNow days: Int) -> String {
+        Self.officialDateFormatter.string(from: Date().addingTimeInterval(TimeInterval(days) * 86_400))
     }
 
     private static let officialDateFormatter: DateFormatter = {
@@ -300,23 +374,33 @@ final class GameFetcher {
         return f
     }()
 
-    // Pick which game to show: prefer Live, then earliest Preview, then Final.
-    // Caller passes a single-date ScheduleResponse for 'next game' lookups.
-    private func pickGame(from response: ScheduleResponse) -> ScheduleGame? {
-        let games = response.dates.flatMap { $0.games }
+    // MARK: - Game selection
+
+    // Prefer a live game, then the earliest upcoming game, then the most recent
+    // final. `excluding` holds finals whose display window has expired.
+    private static func pickGame(from games: [ScheduleGame], excluding: Set<Int>) -> ScheduleGame? {
+        let games = games.filter { !excluding.contains($0.gamePk) }
         if let live = games.first(where: { $0.status.abstractGameState == "Live" }) { return live }
         if let preview = games.filter({ $0.status.abstractGameState == "Preview" })
-            .sorted(by: { $0.gameDate < $1.gameDate }).first { return preview }
-        if let final_ = games.first(where: { $0.status.abstractGameState == "Final" }) { return final_ }
+            .min(by: { $0.gameDate < $1.gameDate }) { return preview }
+        if let final_ = games.filter({ $0.status.abstractGameState == "Final" })
+            .max(by: { $0.gameDate < $1.gameDate }) { return final_ }
         return nil
     }
 
-    // Returns (opponentName, opponentId, selectedTeamIsHome)
-    private func opponentInfo(from game: ScheduleGame) -> (name: String, id: Int, isHome: Bool) {
+    /// Test seam for `pickGame`: returns the chosen game's gamePk for a raw
+    /// schedule payload.
+    func pickGamePk(fromScheduleData data: Data, excluding: Set<Int> = []) -> Int? {
+        guard let response = try? JSONDecoder().decode(ScheduleResponse.self, from: data) else { return nil }
+        return Self.pickGame(from: response.dates.flatMap { $0.games }, excluding: excluding)?.gamePk
+    }
+
+    // Returns (opponentId, selectedTeamIsHome)
+    private func opponentInfo(from game: ScheduleGame) -> (id: Int, isHome: Bool) {
         if game.teams.away.team.id == teamId {
-            return (game.teams.home.team.name, game.teams.home.team.id, false)
+            return (game.teams.home.team.id, false)
         } else {
-            return (game.teams.away.team.name, game.teams.away.team.id, true)
+            return (game.teams.away.team.id, true)
         }
     }
 
@@ -335,7 +419,7 @@ final class GameFetcher {
 
     /// Fetches today's game status for all 30 teams and, for teams with no game today,
     /// their next scheduled game within the next 7 days.
-    /// Calls completion on a background queue with `[teamId: TodayGameStatus]`.
+    /// Calls completion on the main queue with `[teamId: TodayGameStatus]`.
     /// On network/parse error, calls completion with an empty dict.
     func fetchTodayAllGames(date: Date = Date(),
                             completion: @escaping ([Int: TodayGameStatus]) -> Void) {
@@ -367,7 +451,7 @@ final class GameFetcher {
             futureData = data
         }.resume()
 
-        group.notify(queue: .global()) { [weak self] in
+        group.notify(queue: .main) { [weak self] in
             guard let self else { completion([:]); return }
 
             // If today's fetch failed, return empty rather than fabricating
@@ -437,14 +521,23 @@ final class GameFetcher {
     }
 
     /// Parses a hydrated schedule Data payload into a per-team status dict.
+    /// When a team plays twice (doubleheader, resumed suspended game), the
+    /// live game wins, then the earliest upcoming game, then the final.
     /// Exposed as `internal` so unit tests can call it with fixture JSON.
     func parseTodayGames(from data: Data) -> [Int: TodayGameStatus] {
         guard let response = try? JSONDecoder().decode(AllGamesScheduleResponse.self, from: data) else {
             return [:]
         }
-        var result: [Int: TodayGameStatus] = [:]
+        var result: [Int: (status: TodayGameStatus, rank: Int, gameDate: String)] = [:]
         let allGames = response.dates.flatMap { $0.games }
-            .sorted { $0.gameDate < $1.gameDate }   // ascending → first write wins for doubleheaders
+
+        func offer(_ status: TodayGameStatus, rank: Int, gameDate: String, to teamId: Int) {
+            if let current = result[teamId] {
+                let better = rank < current.rank || (rank == current.rank && gameDate < current.gameDate)
+                guard better else { return }
+            }
+            result[teamId] = (status, rank, gameDate)
+        }
 
         for game in allGames {
             let homeId   = game.teams.home.team.id
@@ -456,14 +549,17 @@ final class GameFetcher {
 
             let homeStatus: TodayGameStatus
             let awayStatus: TodayGameStatus
+            let rank: Int
 
             if detailed == "Postponed" || detailed.contains("Suspended") {
                 homeStatus = .postponed
                 awayStatus = .postponed
+                rank = 3
             } else if state == "Preview" {
                 guard let gameDate = isoFormatter.date(from: game.gameDate) else { continue }
                 homeStatus = .upcoming(opponentAbbr: awayAbbr, isHome: true, time: gameDate)
                 awayStatus = .upcoming(opponentAbbr: homeAbbr, isHome: false, time: gameDate)
+                rank = 1
             } else if state == "Live" {
                 let homeRuns = game.teams.home.score ?? 0
                 let awayRuns = game.teams.away.score ?? 0
@@ -475,6 +571,7 @@ final class GameFetcher {
                 awayStatus = .live(opponentAbbr: homeAbbr, isHome: false,
                                    myRuns: awayRuns, theirRuns: homeRuns,
                                    inning: inning, isTopInning: isTop)
+                rank = 0
             } else if state == "Final" {
                 let homeRuns = game.teams.home.score ?? 0
                 let awayRuns = game.teams.away.score ?? 0
@@ -482,14 +579,15 @@ final class GameFetcher {
                                      myRuns: homeRuns, theirRuns: awayRuns)
                 awayStatus = .final_(opponentAbbr: homeAbbr, isHome: false,
                                      myRuns: awayRuns, theirRuns: homeRuns)
+                rank = 2
             } else {
                 continue
             }
 
-            if result[homeId] == nil { result[homeId] = homeStatus }
-            if result[awayId] == nil { result[awayId] = awayStatus }
+            offer(homeStatus, rank: rank, gameDate: game.gameDate, to: homeId)
+            offer(awayStatus, rank: rank, gameDate: game.gameDate, to: awayId)
         }
-        return result
+        return result.mapValues { $0.status }
     }
 
     // MARK: - All-games decodable structs (private to file; parseTodayGames exposed for testing)
@@ -519,26 +617,28 @@ final class GameFetcher {
         let isTopInning: Bool?
     }
 
-    // MARK: - Generic JSON fetch
+    // MARK: - Generic fetch (completion on the main queue)
 
     private func fetch<T: Decodable>(url: URL, as type: T.Type,
                                      completion: @escaping (Result<T, Error>) -> Void) {
-        let task = session.dataTask(with: url) { data, _, error in
-            if let error {
-                completion(.failure(error))
-                return
-            }
-            guard let data else {
-                completion(.failure(URLError(.badServerResponse)))
-                return
-            }
-            do {
-                let decoded = try JSONDecoder().decode(T.self, from: data)
-                completion(.success(decoded))
-            } catch {
-                completion(.failure(error))
-            }
+        fetchData(url: url) { result in
+            completion(result.flatMap { data in
+                Result { try JSONDecoder().decode(T.self, from: data) }
+            })
         }
-        task.resume()
+    }
+
+    private func fetchData(url: URL, completion: @escaping (Result<Data, Error>) -> Void) {
+        session.dataTask(with: url) { data, _, error in
+            let result: Result<Data, Error>
+            if let error {
+                result = .failure(error)
+            } else if let data {
+                result = .success(data)
+            } else {
+                result = .failure(URLError(.badServerResponse))
+            }
+            DispatchQueue.main.async { completion(result) }
+        }.resume()
     }
 }

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let fetcher = GameFetcher()
     private var timer: Timer?
     private var latestStandings: TeamRecords?
+    private var lastState: GameState?
 
     // Popover state
     private var popover: NSPopover?
@@ -16,8 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var latestTodayGamesTimestamp: Date?
     private var todayGamesTimer: Timer?
 
-    // Error resilience: only show .error state after 3 consecutive failures.
+    // Error resilience: the failure marker appears only after this many
+    // consecutive failed fetches, so transient errors stay invisible.
+    private let failureThreshold = 3
     private var consecutiveFailures = 0
+    private let errorMarker = " ·?"
+
+    private static let logoSize: CGFloat = 18
 
     // MARK: - Team Selection (UserDefaults)
 
@@ -30,15 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSLog("🚀 On Deck App launched")
-
         NSApp.setActivationPolicy(.accessory)
-        NSLog("📱 Activation policy set to accessory")
 
         // Show the stored team's logo before the first fetch returns.
         fetcher.teamId = selectedTeamId
         statusItem.button?.attributedTitle = makeTeamPlaceholder(for: selectedTeamId)
-        NSLog("✅ Status item initialised for teamId: \(selectedTeamId)")
 
         // Wire up popover toggle — do NOT set statusItem.menu (would intercept clicks).
         statusItem.button?.action = #selector(togglePopover(_:))
@@ -52,7 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleWake),
             name: NSWorkspace.didWakeNotification, object: nil)
 
-        NSLog("🔄 Starting initial refresh...")
+        // Redraw the status item as team logos finish downloading.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleLogoLoaded),
+            name: TeamLogoStore.didLoadLogo, object: nil)
+
         refresh()
     }
 
@@ -90,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the desktop. NSPopover.behavior = .transient handles in-app clicks; the
         // global monitor covers Finder, other apps, and the desktop where .transient
         // doesn't reliably fire for .accessory-policy processes.
+        removeEventMonitor()
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak pop] _ in
             pop?.performClose(nil)
         }
@@ -103,6 +110,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Fetch fresh games if nil or stale (>= 60s old).
         let isStale = latestTodayGamesTimestamp.map { Date().timeIntervalSince($0) >= 60 } ?? true
         if isStale { fetchAndUpdateTodayGames() }
+    }
+
+    private func removeEventMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
     }
 
     // MARK: - Settings menu
@@ -137,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fetcher.teamId = newId
 
         // Show new team's logo immediately; don't let a stale score linger.
+        lastState = nil
         statusItem.button?.attributedTitle = makeTeamPlaceholder(for: newId)
 
         refresh()
@@ -149,37 +164,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fetchAndRebuildStandings()
     }
 
+    @objc private func handleLogoLoaded() {
+        if let state = lastState {
+            apply(state: state)
+        } else {
+            statusItem.button?.attributedTitle = makeTeamPlaceholder(for: selectedTeamId)
+        }
+        if consecutiveFailures >= failureThreshold { appendErrorMarker() }
+    }
+
     @objc func refresh() {
         timer?.invalidate()
         fetcher.fetchCurrentState { [weak self] state in
             guard let self else { return }
-            print("[GameFetcher]", state)
-
-            DispatchQueue.main.async {
-                if case .error = state {
-                    self.consecutiveFailures += 1
-                    if self.consecutiveFailures < 3 {
-                        self.scheduleNextRefresh(for: state)
-                        return
-                    }
-                    if let current = self.statusItem.button?.attributedTitle,
-                       !current.string.hasSuffix(" ·?") {
-                        let mutable = NSMutableAttributedString(attributedString: current)
-                        mutable.append(NSAttributedString(string: " ·?"))
-                        self.statusItem.button?.attributedTitle = mutable
-                    }
-                    self.scheduleNextRefresh(for: state)
-                } else {
-                    self.consecutiveFailures = 0
-                    self.apply(state: state)
-                    self.scheduleNextRefresh(for: state)
-
-                    if case .final_ = state {
-                        self.fetchAndRebuildStandings()
-                    }
-                }
+            if case .error = state {
+                self.consecutiveFailures += 1
+                if self.consecutiveFailures >= self.failureThreshold { self.appendErrorMarker() }
+            } else {
+                self.consecutiveFailures = 0
+                self.apply(state: state)
+                if case .final_ = state { self.fetchAndRebuildStandings() }
             }
+            self.scheduleNextRefresh(for: state)
         }
+    }
+
+    private func appendErrorMarker() {
+        guard let current = statusItem.button?.attributedTitle,
+              !current.string.hasSuffix(errorMarker) else { return }
+        let mutable = NSMutableAttributedString(attributedString: current)
+        mutable.append(NSAttributedString(string: errorMarker))
+        statusItem.button?.attributedTitle = mutable
     }
 
     private func scheduleNextRefresh(for state: GameState) {
@@ -188,8 +203,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch state {
         case .live:
             interval = 30
-        case .upcoming(_, _, _, let time):
+        case .upcoming(_, _, let time):
             interval = Date().distance(to: time) <= 30 * 60 ? 60 : 5 * 60
+        case .error:
+            // Retry soon so a single dropped request does not stall a live game.
+            interval = 60
         default:
             interval = 5 * 60
         }
@@ -200,13 +218,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Login item
 
     @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {
-        if SMAppService.mainApp.status == .enabled {
-            try? SMAppService.mainApp.unregister()
-            sender.state = .off
+        let service = SMAppService.mainApp
+        if service.status == .enabled {
+            try? service.unregister()
         } else {
-            try? SMAppService.mainApp.register()
-            sender.state = .on
+            try? service.register()
+            if service.status == .requiresApproval {
+                SMAppService.openSystemSettingsLoginItems()
+            }
         }
+        sender.state = service.status == .enabled ? .on : .off
     }
 
     // MARK: - Standings
@@ -217,13 +238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func fetchAndRebuildStandings() {
         fetcher.fetchStandings(season: currentSeason()) { [weak self] result in
-            guard let self else { return }
-            DispatchQueue.main.async {
-                if case .success(let records) = result {
-                    self.latestStandings = records
-                    self.standingsVC?.update(standings: records)
-                }
-            }
+            guard let self, case .success(let records) = result, !records.isEmpty else { return }
+            self.latestStandings = records
+            self.standingsVC?.update(standings: records)
         }
     }
 
@@ -232,14 +249,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func fetchAndUpdateTodayGames() {
         fetcher.fetchTodayAllGames { [weak self] games in
             guard let self else { return }
-            DispatchQueue.main.async {
-                if !games.isEmpty {
-                    self.latestTodayGames = games
-                    self.latestTodayGamesTimestamp = Date()
-                }
-                if let latest = self.latestTodayGames {
-                    self.standingsVC?.update(games: latest)
-                }
+            if !games.isEmpty {
+                self.latestTodayGames = games
+                self.latestTodayGamesTimestamp = Date()
+            }
+            if let latest = self.latestTodayGames {
+                self.standingsVC?.update(games: latest)
             }
         }
     }
@@ -247,20 +262,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Display
 
     private func apply(state: GameState) {
-        statusItem.button?.attributedTitle = makeAttributedTitle(for: state)
-    }
-
-    /// Composites an image over a dark rounded-rect background.
-    private func withDarkBackground(_ img: NSImage, size: NSSize) -> NSImage {
-        let result = NSImage(size: size)
-        result.lockFocus()
-        let rect = NSRect(origin: .zero, size: size)
-        NSColor(red: 0.08, green: 0.08, blue: 0.08, alpha: 1).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-        let logoRect = NSRect(x: 1, y: 1, width: size.width - 2, height: size.height - 2)
-        img.draw(in: logoRect)
-        result.unlockFocus()
-        return result
+        lastState = state
+        if let title = makeAttributedTitle(for: state) {
+            statusItem.button?.attributedTitle = title
+        }
     }
 
     /// "[logo] CODE" string shown at launch or immediately after a team switch,
@@ -268,136 +273,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeTeamPlaceholder(for teamId: Int) -> NSAttributedString {
         let s = NSMutableAttributedString()
         if let img = logoImage(for: teamId) {
-            let att = NSTextAttachment()
-            att.image = img
-            att.bounds = CGRect(x: 0, y: -3, width: 18, height: 18)
-            s.append(NSAttributedString(attachment: att))
-            s.append(blueAtt(" "))
+            s.append(logoAttachment(img))
+            s.append(textAtt(" "))
         }
-        s.append(blueAtt(espnCode(for: teamId).uppercased()))
+        s.append(textAtt(mlbAbbreviation(for: teamId)))
         return s
     }
 
-    /*
-     Menu bar display format (logos replace team abbreviations):
-
-       Upcoming:  [user-logo] vs [opp-logo] · 7:05 PM
-       Live:      [away-logo] 3 – 1 [home-logo] · ↑7
-       Final:     [away-logo] 3 – 1 [home-logo] · W
-       Postponed: [user-logo] vs [opp-logo] · PPD
-       Next game: [user-logo] vs [opp-logo] · Fri 4/5 7:05 PM
-       Off season:[user-logo] · Off Season
-    */
-    private static let yankeeBlue = NSColor(red: 12/255, green: 35/255, blue: 64/255, alpha: 1)
-
-    private func blueAtt(_ str: String) -> NSAttributedString {
-        NSAttributedString(string: str, attributes: [.foregroundColor: Self.yankeeBlue])
+    /// Navy in light mode, where it reads well on the translucent menu bar;
+    /// the system label colour in dark mode, where navy would vanish.
+    private static let statusTextColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .labelColor
+            : NSColor(red: 12/255, green: 35/255, blue: 64/255, alpha: 1)
     }
 
-    private func boldBlueAtt(_ str: String) -> NSAttributedString {
+    private func textAtt(_ str: String) -> NSAttributedString {
+        NSAttributedString(string: str, attributes: [.foregroundColor: Self.statusTextColor])
+    }
+
+    private func boldTextAtt(_ str: String) -> NSAttributedString {
         NSAttributedString(string: str, attributes: [
-            .foregroundColor: Self.yankeeBlue,
+            .foregroundColor: Self.statusTextColor,
             .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
         ])
     }
 
-    private func separatorAtt() -> NSAttributedString { boldBlueAtt("│") }
-    private func dotAtt() -> NSAttributedString { boldBlueAtt(" · ") }
+    private func logoAttachment(_ img: NSImage) -> NSAttributedString {
+        let att = NSTextAttachment()
+        att.image = img
+        att.bounds = CGRect(x: 0, y: -3, width: Self.logoSize, height: Self.logoSize)
+        return NSAttributedString(attachment: att)
+    }
 
-    private func makeAttributedTitle(for state: GameState) -> NSAttributedString {
-        func logoAtt(for teamId: Int) -> NSAttributedString {
-            guard let img = logoImage(for: teamId) else { return NSAttributedString() }
-            let att = NSTextAttachment()
-            att.image = img
-            att.bounds = CGRect(x: 0, y: -3, width: 18, height: 18)
-            return NSAttributedString(attachment: att)
-        }
-
+    /// Renders the shared title layout with logos (see TitleFormatter.swift).
+    /// Returns nil for `.error`, where the current title is kept.
+    private func makeAttributedTitle(for state: GameState) -> NSAttributedString? {
+        guard let segments = titleSegments(for: state, selectedTeamId: selectedTeamId) else { return nil }
         let s = NSMutableAttributedString()
-
-        switch state {
-        case .upcoming(_, let opponentId, let isHome, let time):
-            let timeStr = timeFormatter.string(from: time)
-            s.append(separatorAtt())
-            s.append(blueAtt(" "))
-            s.append(logoAtt(for: selectedTeamId))
-            s.append(blueAtt(isHome ? " vs " : " @ "))
-            s.append(logoAtt(for: opponentId))
-            s.append(dotAtt())
-            s.append(blueAtt("\(timeStr) "))
-            s.append(separatorAtt())
-
-        case .live(_, let awayId, let awayRuns, _, let homeId, let homeRuns, let inning, let isTop):
-            s.append(separatorAtt())
-            s.append(blueAtt(" "))
-            s.append(logoAtt(for: awayId))
-            s.append(blueAtt(" \(awayRuns) – \(homeRuns) "))
-            s.append(logoAtt(for: homeId))
-            s.append(dotAtt())
-            s.append(blueAtt("\(inning)\(isTop ? "↑" : "↓") "))
-            s.append(separatorAtt())
-
-        case .final_(_, let awayId, let awayRuns, _, let homeId, let homeRuns):
-            let result: String
-            if awayRuns == homeRuns {
-                result = "T"
-            } else if awayId == selectedTeamId {
-                result = awayRuns > homeRuns ? "W" : "L"
-            } else if homeId == selectedTeamId {
-                result = homeRuns > awayRuns ? "W" : "L"
-            } else {
-                result = "L"
+        for segment in segments {
+            switch segment {
+            case .separator:
+                s.append(boldTextAtt("│"))
+            case .dot:
+                s.append(boldTextAtt(" · "))
+            case .text(let str):
+                s.append(textAtt(str))
+            case .team(let teamId):
+                // Falls back to the abbreviation until the logo has downloaded.
+                if let img = logoImage(for: teamId) {
+                    s.append(logoAttachment(img))
+                } else {
+                    s.append(textAtt(mlbAbbreviation(for: teamId)))
+                }
             }
-            s.append(separatorAtt())
-            s.append(blueAtt(" "))
-            s.append(logoAtt(for: awayId))
-            s.append(blueAtt(" \(awayRuns) – \(homeRuns) "))
-            s.append(logoAtt(for: homeId))
-            s.append(dotAtt())
-            s.append(blueAtt("\(result) "))
-            s.append(separatorAtt())
-
-        case .postponed(_, let opponentId, let isHome):
-            s.append(separatorAtt())
-            s.append(blueAtt(" "))
-            s.append(logoAtt(for: selectedTeamId))
-            s.append(blueAtt(isHome ? " vs " : " @ "))
-            s.append(logoAtt(for: opponentId))
-            s.append(dotAtt())
-            s.append(blueAtt("PPD "))
-            s.append(separatorAtt())
-
-        case .nextGame(_, let opponentId, let isHome, let date):
-            let timeStr = timeFormatter.string(from: date)
-            s.append(separatorAtt())
-            s.append(blueAtt(" "))
-            s.append(logoAtt(for: selectedTeamId))
-            s.append(blueAtt(isHome ? " vs " : " @ "))
-            s.append(logoAtt(for: opponentId))
-            if Calendar.current.isDateInToday(date) {
-                s.append(dotAtt())
-                s.append(blueAtt("\(timeStr) "))
-            } else {
-                let dateStr = nextGameFormatter.string(from: date)
-                s.append(dotAtt())
-                s.append(blueAtt("\(dateStr)"))
-                s.append(dotAtt())
-                s.append(blueAtt("\(timeStr) "))
-            }
-            s.append(separatorAtt())
-
-        case .offSeason:
-            s.append(separatorAtt())
-            s.append(blueAtt(" "))
-            s.append(logoAtt(for: selectedTeamId))
-            s.append(dotAtt())
-            s.append(blueAtt("Off Season "))
-            s.append(separatorAtt())
-
-        case .error:
-            return statusItem.button?.attributedTitle ?? NSAttributedString(string: "—")
         }
-
         return s
     }
 }
@@ -406,72 +336,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
+        // A popover closing late must not tear down one that just opened.
+        guard (notification.object as? NSPopover) === popover else { return }
         todayGamesTimer?.invalidate()
         todayGamesTimer = nil
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
-        }
+        removeEventMonitor()
         standingsVC = nil
         popover = nil
     }
 }
-
-// MARK: - Title formatting (pure; used by tests)
-
-func makeTitle(for state: GameState, lastKnown: String = "NYY", selectedTeamId: Int = defaultTeamId) -> String {
-    switch state {
-    case .upcoming(let opp, _, let isHome, let time):
-        let timeStr = timeFormatter.string(from: time)
-        return isHome ? "vs \(teamAbbreviation(opp)) · \(timeStr)"
-                      : "@ \(teamAbbreviation(opp)) · \(timeStr)"
-
-    case .live(let awayAbbr, _, let awayRuns, let homeAbbr, _, let homeRuns, let inning, let isTop):
-        let half = isTop ? "T" : "B"
-        return "\(awayAbbr) \(awayRuns) – \(homeRuns) \(homeAbbr) · \(half)\(inning)"
-
-    case .final_(let awayAbbr, let awayId, let awayRuns, let homeAbbr, let homeId, let homeRuns):
-        let result: String
-        if awayRuns == homeRuns {
-            result = "T"
-        } else if awayId == selectedTeamId {
-            result = awayRuns > homeRuns ? "W" : "L"
-        } else if homeId == selectedTeamId {
-            result = homeRuns > awayRuns ? "W" : "L"
-        } else {
-            result = "L"
-        }
-        return "\(awayAbbr) \(awayRuns) – \(homeRuns) \(homeAbbr) · \(result)"
-
-    case .postponed(let opp, _, let isHome):
-        return isHome ? "vs \(teamAbbreviation(opp)) · PPD"
-                      : "@ \(teamAbbreviation(opp)) · PPD"
-
-    case .nextGame(let opp, _, let isHome, let date):
-        let dateStr = nextGameFormatter.string(from: date)
-        let timeStr = timeFormatter.string(from: date)
-        let suffix = Calendar.current.isDateInToday(date) ? " · \(timeStr)" : " · \(dateStr) · \(timeStr)"
-        return isHome ? "vs \(teamAbbreviation(opp))\(suffix)"
-                      : "@ \(teamAbbreviation(opp))\(suffix)"
-
-    case .offSeason:
-        return "\(espnCode(for: selectedTeamId).uppercased()) · Off Season"
-
-    case .error:
-        return lastKnown
-    }
-}
-
-private let timeFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "h:mm a"
-    f.timeZone = TimeZone.current
-    return f
-}()
-
-private let nextGameFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "M/d"
-    f.timeZone = TimeZone.current
-    return f
-}()
