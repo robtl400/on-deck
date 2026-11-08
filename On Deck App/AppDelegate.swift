@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let logoSize: CGFloat = 18
 
+    // `--demo` renders fixed sample data instead of polling (see demoState()).
+    private var isDemo = false
+
     // MARK: - Team Selection (UserDefaults)
 
     private var selectedTeamId: Int {
@@ -59,7 +62,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleLogoLoaded),
             name: TeamLogoStore.didLoadLogo, object: nil)
 
+        if let demo = demoState() {
+            // `--demo live|final|upcoming` renders a fixed sample instead of
+            // polling, for screenshots and layout work out of season. The
+            // popover gets one team in every game status; standings stay real.
+            isDemo = true
+            latestTodayGames = demoTodayGames()
+            apply(state: demo)
+            return
+        }
+
         refresh()
+    }
+
+    /// Sample statuses for the popover's game column: live games in both
+    /// halves of an inning, upcoming, postponed and next-game rows, plus
+    /// teams with no game, so every layout the column can show is visible.
+    private func demoTodayGames() -> [Int: TodayGameStatus] {
+        let cal = Calendar.current
+        let tonight = cal.date(bySettingHour: 19, minute: 5, second: 0, of: Date()) ?? Date()
+        let friday = cal.date(byAdding: .day, value: 3, to: tonight) ?? tonight
+        return [
+            111: .live(opponentAbbr: "NYY", isHome: false, myRuns: 3, theirRuns: 5, inning: 7, isTopInning: true),
+            147: .live(opponentAbbr: "BOS", isHome: true,  myRuns: 5, theirRuns: 3, inning: 7, isTopInning: true),
+            119: .live(opponentAbbr: "SF",  isHome: true,  myRuns: 2, theirRuns: 2, inning: 4, isTopInning: false),
+            137: .live(opponentAbbr: "LAD", isHome: false, myRuns: 2, theirRuns: 2, inning: 4, isTopInning: false),
+            110: .upcoming(opponentAbbr: "TB",  isHome: true,  time: tonight),
+            139: .upcoming(opponentAbbr: "BAL", isHome: false, time: tonight),
+            144: .upcoming(opponentAbbr: "PHI", isHome: true,  time: tonight),
+            143: .upcoming(opponentAbbr: "ATL", isHome: false, time: tonight),
+            117: .upcoming(opponentAbbr: "SEA", isHome: true,  time: tonight),
+            136: .upcoming(opponentAbbr: "HOU", isHome: false, time: tonight),
+            112: .postponed,
+            138: .postponed,
+            116: .nextGame(opponentAbbr: "CLE", isHome: true,  date: friday),
+            114: .nextGame(opponentAbbr: "DET", isHome: false, date: friday),
+            158: .nextGame(opponentAbbr: "CHC", isHome: true,  date: friday),
+        ]
+    }
+
+    private func demoState() -> GameState? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--demo"), i + 1 < args.count else { return nil }
+        let opponent = 111 // Red Sox
+        switch args[i + 1] {
+        case "live":
+            return .live(awayAbbr: "BOS", awayId: opponent, awayRuns: 3,
+                         homeAbbr: "NYY", homeId: selectedTeamId, homeRuns: 5,
+                         inning: 7, isTopInning: true)
+        case "final":
+            return .final_(awayAbbr: "BOS", awayId: opponent, awayRuns: 3,
+                           homeAbbr: "NYY", homeId: selectedTeamId, homeRuns: 5)
+        case "upcoming":
+            return .upcoming(opponentId: opponent, isHome: true,
+                             time: Calendar.current.date(bySettingHour: 19, minute: 5, second: 0, of: Date()) ?? Date())
+        default:
+            return nil
+        }
     }
 
     // MARK: - Popover
@@ -100,6 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak pop] _ in
             pop?.performClose(nil)
         }
+
+        guard !isDemo else { return }
 
         // Live-refresh timer: fires every 30s while popover is open.
         todayGamesTimer?.invalidate()

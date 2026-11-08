@@ -2,6 +2,14 @@
 
 A lightweight macOS menu bar app that shows live MLB game scores for your favorite team — right in the status bar.
 
+<p>
+  <img src="docs/menubar-live.png" alt="Menu bar showing a live score, Red Sox 3 – Yankees 5, top of the 7th" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/menubar-final.png" alt="Menu bar showing a final score with a W for the followed team" width="300">
+</p>
+
+<img src="docs/standings-popover.png" alt="Standings popover: all 30 teams in six divisions with live scores, game times, postponements and next games, the followed team highlighted" width="666">
+
 ## Features
 
 - **Live scores** in the menu bar — updates every 30 seconds during active games
@@ -38,6 +46,8 @@ open "On Deck App.xcodeproj"
 ```
 
 Signing is set to Automatic with no team selected; pick your own team under Signing & Capabilities before running. Then press **⌘R** to run, or **⌘B** to build. The app uses `NSApp.setActivationPolicy(.accessory)` so it runs as a background/menu-bar-only process with no Dock icon.
+
+To see the menu bar states out of season, launch with `--demo live`, `--demo final` or `--demo upcoming`; the app renders a fixed sample instead of polling, and the popover shows one team in every game status over the real standings.
 
 To build a release binary from the command line:
 
