@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selectedTeamId: Int {
         get {
             let v = UserDefaults.standard.integer(forKey: "selectedTeamId")
-            return v == 0 ? 147 : v   // 0 = key absent; default to Yankees
+            return v == 0 ? defaultTeamId : v   // 0 = key absent
         }
         set { UserDefaults.standard.set(newValue, forKey: "selectedTeamId") }
     }
@@ -419,7 +419,7 @@ extension AppDelegate: NSPopoverDelegate {
 
 // MARK: - Title formatting (pure; used by tests)
 
-func makeTitle(for state: GameState, lastKnown: String = "NYY", selectedTeamId: Int = yankeesTeamId) -> String {
+func makeTitle(for state: GameState, lastKnown: String = "NYY", selectedTeamId: Int = defaultTeamId) -> String {
     switch state {
     case .upcoming(let opp, _, let isHome, let time):
         let timeStr = timeFormatter.string(from: time)

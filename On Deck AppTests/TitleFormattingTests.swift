@@ -33,13 +33,13 @@ final class TitleFormattingTests: XCTestCase {
         XCTAssertEqual(title, "MIA 4 – 2 NYY · B7")
     }
 
-    func testFinalYankeesWin() {
+    func testFinalDefaultTeamWin() {
         let title = makeTitle(for: .final_(awayAbbr: "MIA", awayId: 146, awayRuns: 4,
                                            homeAbbr: "NYY", homeId: 147, homeRuns: 5))
         XCTAssertEqual(title, "MIA 4 – 5 NYY · W")
     }
 
-    func testFinalYankeesLose() {
+    func testFinalDefaultTeamLose() {
         let title = makeTitle(for: .final_(awayAbbr: "NYY", awayId: 147, awayRuns: 2,
                                            homeAbbr: "BOS", homeId: 111, homeRuns: 6))
         XCTAssertEqual(title, "NYY 2 – 6 BOS · L")
@@ -126,9 +126,9 @@ final class TitleFormattingTests: XCTestCase {
         XCTAssertEqual(title, "NYY 3 – 3 BOS · T")
     }
 
-    // MARK: - Non-Yankees selected team
+    // MARK: - Non-default selected team
 
-    func testFinalNonYankeesWin() {
+    func testFinalOtherTeamWin() {
         let title = makeTitle(
             for: .final_(awayAbbr: "SF", awayId: 137, awayRuns: 2,
                          homeAbbr: "LAD", homeId: 119, homeRuns: 5),
@@ -136,7 +136,7 @@ final class TitleFormattingTests: XCTestCase {
         XCTAssertEqual(title, "SF 2 – 5 LAD · W")
     }
 
-    func testFinalNonYankeesLose() {
+    func testFinalOtherTeamLose() {
         let title = makeTitle(
             for: .final_(awayAbbr: "LAD", awayId: 119, awayRuns: 1,
                          homeAbbr: "SF", homeId: 137, homeRuns: 4),
@@ -144,7 +144,7 @@ final class TitleFormattingTests: XCTestCase {
         XCTAssertEqual(title, "LAD 1 – 4 SF · L")
     }
 
-    func testOffSeasonNonYankees() {
+    func testOffSeasonOtherTeam() {
         let title = makeTitle(for: .offSeason, selectedTeamId: 119)
         XCTAssertEqual(title, "LAD · Off Season")
     }

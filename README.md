@@ -26,7 +26,7 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 
 ## Requirements
 
-- macOS 13 Ventura or later
+- macOS 13 Ventura or later (the Launch at Login toggle uses `SMAppService`, introduced in macOS 13)
 - Xcode 15 or later (to build from source)
 - No third-party dependencies
 
@@ -48,7 +48,7 @@ xcodebuild -project "On Deck App.xcodeproj" \
            -derivedDataPath build
 ```
 
-The compiled app lands at `build/Release/Yankees Menu.app` (rename forthcoming).
+The compiled app lands at `build/Release/On Deck App.app`.
 
 ## Architecture
 

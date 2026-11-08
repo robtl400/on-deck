@@ -106,7 +106,7 @@ final class GameFetcher {
     // The selected team. Changing this clears activeGamePk so the next poll
     // does a fresh schedule lookup for the new team instead of continuing to
     // track the previous team's live game.
-    var teamId: Int = yankeesTeamId {
+    var teamId: Int = defaultTeamId {
         didSet { activeGamePk = nil }
     }
 
@@ -311,7 +311,7 @@ final class GameFetcher {
         return nil
     }
 
-    // Returns (opponentName, opponentId, yankeesAreHome)
+    // Returns (opponentName, opponentId, selectedTeamIsHome)
     private func opponentInfo(from game: ScheduleGame) -> (name: String, id: Int, isHome: Bool) {
         if game.teams.away.team.id == teamId {
             return (game.teams.home.team.name, game.teams.home.team.id, false)

@@ -1,6 +1,6 @@
 import Cocoa
 
-let yankeesTeamId = 147
+let defaultTeamId = 147
 
 enum GameState {
     case upcoming(opponent: String, opponentId: Int, isHome: Bool, time: Date)
