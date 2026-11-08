@@ -1,0 +1,20 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project "On Deck App.xcodeproj" \
+            -scheme "On Deck App" \
+            -destination "platform=macOS" \
+            -only-testing "On Deck AppTests" \
+            CODE_SIGNING_ALLOWED=NO
