@@ -5,7 +5,7 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 ## Features
 
 - **Live scores** in the menu bar — updates every 30 seconds during active games
-- **All game states** handled: upcoming, live, final, postponed, next-game, off-season
+- **All game states** handled: upcoming, live, final, postponed or cancelled, next-game, off-season
 - **Team logos** replace text abbreviations in the status bar display; logos are fetched from MLB's static asset host on first use and cached locally, so none are bundled with the app
 - **Standings popover** — click the menu bar item to open a full 30-team standings grid with today's game status for every team; doubleheaders show the live or upcoming game once the first is over
 - **Follow any team** — pick from all 30 MLB teams, organized by division; selection persists across launches
@@ -20,7 +20,7 @@ A lightweight macOS menu bar app that shows live MLB game scores for your favori
 | Upcoming | `│ 🔵 vs ⚾ · 7:05 PM │` |
 | Live | `│ ⚾ 3 – 1 🔵 · 7↑ │` |
 | Final (shown for 30 minutes after the game ends) | `│ ⚾ 3 – 1 🔵 · W │` |
-| Postponed | `│ 🔵 vs ⚾ · PPD │` |
+| Postponed, suspended or cancelled | `│ 🔵 vs ⚾ · PPD │` |
 | Next game | `│ 🔵 vs ⚾ · 4/29 · 7:05 PM │` |
 | Off season | `│ 🔵 · Off Season │` |
 
@@ -138,5 +138,5 @@ The suite covers the menu bar title layout for every `GameState`, the team table
 ## Known Limitations
 
 - **Standings on first launch** — if the initial `fetchStandings` call fails (e.g., no network at launch), standings show teams in alphabetical order with no W-L records until the followed team's game goes final or the Mac sleeps and wakes.
-- **Doubleheaders** — game 1 is shown until it has been final for 30 minutes, then game 2 takes over.
+- **Doubleheaders** — game 1's final score is shown for 30 minutes after it ends, then game 2 takes over. If the app launches during that window it shows game 2 straight away, since the end time is only known once game 1 has been polled.
 - **No push notifications** — the app polls on a timer; there is no push or background-refresh entitlement.

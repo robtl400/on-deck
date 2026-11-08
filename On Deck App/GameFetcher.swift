@@ -97,11 +97,16 @@ private struct LinescoreTeamRuns: Decodable {
      │                                 ──(Final, recent)─► .final_ for finalDisplayWindow
      │                                 ──(Final, older)──► clear activeGamePk, exclude game, re-poll
      │
-     └─(no active game)──► schedule yesterday..today
-                              ├── Live     ──► set activeGamePk, live feed (above)
-                              ├── Preview  ──► .upcoming
-                              ├── Final    ──► live feed (above, for scores + end time)
-                              └── nothing  ──► next 14 days ──► .nextGame / .offSeason
+     └─(no active game)──► schedule yesterday..today (yesterday only for games still live)
+                              ├── Live        ──► set activeGamePk, live feed (above)
+                              ├── Final still in its display window ──► live feed (above)
+                              ├── Preview     ──► .upcoming
+                              ├── Final       ──► live feed (above, for scores + end time)
+                              ├── PPD / Cancelled ──► .postponed
+                              └── nothing     ──► next 14 days ──► .nextGame / .offSeason
+
+ Every request carries the team it was made for; a response for a team
+ that is no longer selected neither mutates state nor reaches the caller.
  */
 final class GameFetcher {
 
@@ -120,12 +125,17 @@ final class GameFetcher {
     // saw the game as Final stands in for it.
     private var finalFirstSeen: [Int: Date] = [:]
 
+    // The final currently shown and when its window closes, so a doubleheader's
+    // second game does not replace it before the window ends.
+    private var displayedFinal: (gamePk: Int, until: Date)?
+
     // The selected team. Changing it drops the tracked game and any result
     // still in flight for the previous team.
     var teamId: Int = defaultTeamId {
         didSet {
             activeGamePk = nil
             expiredFinals = []
+            displayedFinal = nil
         }
     }
 
@@ -157,11 +167,14 @@ final class GameFetcher {
         }
 
         if let gamePk = activeGamePk {
-            fetchLiveFeed(gamePk: gamePk, completion: deliver)
+            fetchLiveFeed(gamePk: gamePk, team: requestedTeam, completion: deliver)
         } else {
-            lookupSchedule(completion: deliver)
+            lookupSchedule(team: requestedTeam, completion: deliver)
         }
     }
+
+    /// True once the user has moved on from the team a response was fetched for.
+    private func isStale(_ team: Int) -> Bool { team != teamId }
 
     /// Fetches standings for all 30 teams. Before Opening Day the API returns
     /// no records for the new season, so the previous season is used instead.
@@ -207,34 +220,37 @@ final class GameFetcher {
 
     // MARK: - Schedule lookup
 
-    private func lookupSchedule(completion: @escaping (GameState) -> Void) {
+    private func lookupSchedule(team: Int, completion: @escaping (GameState) -> Void) {
         // Yesterday is included so a game still in progress after local
         // midnight is found at launch or after a team switch.
         let today = todayOfficialDate()
         let yesterday = officialDate(daysFromNow: -1)
-        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&startDate=\(yesterday)&endDate=\(today)")!
+        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(team)&startDate=\(yesterday)&endDate=\(today)")!
 
         fetch(url: url, as: ScheduleResponse.self) { [weak self] result in
-            guard let self else { return }
+            guard let self, !self.isStale(team) else { return }
             switch result {
             case .failure:
                 completion(.error)
             case .success(let response):
-                let games = response.dates.flatMap { $0.games }
-                guard let game = Self.pickGame(from: games, excluding: self.expiredFinals) else {
-                    self.fetchNextGame(after: today, completion: completion)
+                // Yesterday only matters for a game that is still in progress.
+                let games = response.dates.flatMap { date in
+                    date.date == today ? date.games : date.games.filter { $0.status.abstractGameState == "Live" }
+                }
+                let keepFinal = self.displayedFinal.flatMap { $0.until > Date() ? $0.gamePk : nil }
+                guard let game = Self.pickGame(from: games, excluding: self.expiredFinals, preferringFinal: keepFinal) else {
+                    let seen = Set(response.dates.flatMap { $0.games }.map { $0.gamePk })
+                    self.fetchNextGame(after: today, excluding: seen, team: team, completion: completion)
                     return
                 }
-                self.resolveState(from: game, completion: completion)
+                self.resolveState(from: game, team: team, completion: completion)
             }
         }
     }
 
-    private func resolveState(from game: ScheduleGame, completion: @escaping (GameState) -> Void) {
-        let detailed = game.status.detailedState ?? ""
-
-        if detailed == "Postponed" || detailed.contains("Suspended") {
-            let (opponentId, isHome) = opponentInfo(from: game)
+    private func resolveState(from game: ScheduleGame, team: Int, completion: @escaping (GameState) -> Void) {
+        if Self.isNotPlayed(game.status) {
+            let (opponentId, isHome) = opponentInfo(from: game, team: team)
             completion(.postponed(opponentId: opponentId, isHome: isHome))
             return
         }
@@ -245,16 +261,16 @@ final class GameFetcher {
                 completion(.error)
                 return
             }
-            let (opponentId, isHome) = opponentInfo(from: game)
+            let (opponentId, isHome) = opponentInfo(from: game, team: team)
             completion(.upcoming(opponentId: opponentId, isHome: isHome, time: gameDate))
 
         case "Live":
             activeGamePk = game.gamePk
-            fetchLiveFeed(gamePk: game.gamePk, completion: completion)
+            fetchLiveFeed(gamePk: game.gamePk, team: team, completion: completion)
 
         case "Final":
             // The live feed supplies the final score and the game's end time.
-            fetchLiveFeed(gamePk: game.gamePk, completion: completion)
+            fetchLiveFeed(gamePk: game.gamePk, team: team, completion: completion)
 
         default:
             completion(.error)
@@ -263,27 +279,26 @@ final class GameFetcher {
 
     // MARK: - Live feed
 
-    private func fetchLiveFeed(gamePk: Int, completion: @escaping (GameState) -> Void) {
+    private func fetchLiveFeed(gamePk: Int, team: Int, completion: @escaping (GameState) -> Void) {
         let url = URL(string: "\(baseURL)/api/v1.1/game/\(gamePk)/feed/live")!
 
         fetch(url: url, as: LiveFeedResponse.self) { [weak self] result in
-            guard let self else { return }
+            guard let self, !self.isStale(team) else { return }
             switch result {
             case .failure:
                 completion(.error)
             case .success(let feed):
-                let detailed = feed.gameData.status.detailedState ?? ""
                 let ls = feed.liveData.linescore
                 let awayTeam = feed.gameData.teams.away
                 let homeTeam = feed.gameData.teams.home
                 let awayRuns = ls.teams.away.runs ?? 0
                 let homeRuns = ls.teams.home.runs ?? 0
 
-                if detailed.contains("Suspended") {
-                    // The API keeps a suspended game in the "Live" state until it
-                    // resumes, which may be days later.
+                if Self.isNotPlayed(feed.gameData.status) {
+                    // Suspended games stay "Live" in the API until they resume,
+                    // possibly days later; cancelled games are "Final" with no score.
                     self.activeGamePk = nil
-                    let isHome = homeTeam.id == self.teamId
+                    let isHome = homeTeam.id == team
                     completion(.postponed(opponentId: isHome ? awayTeam.id : homeTeam.id, isHome: isHome))
                     return
                 }
@@ -299,7 +314,8 @@ final class GameFetcher {
 
                 case "Final":
                     self.activeGamePk = nil
-                    if self.isWithinFinalWindow(gamePk: gamePk, info: feed.gameData.gameInfo) {
+                    if let until = self.finalWindowEnd(gamePk: gamePk, info: feed.gameData.gameInfo), until > Date() {
+                        self.displayedFinal = (gamePk, until)
                         completion(.final_(
                             awayAbbr: awayTeam.abbreviation, awayId: awayTeam.id, awayRuns: awayRuns,
                             homeAbbr: homeTeam.abbreviation, homeId: homeTeam.id, homeRuns: homeRuns
@@ -307,7 +323,8 @@ final class GameFetcher {
                     } else {
                         // Move on: a doubleheader's second game, or the next scheduled game.
                         self.expiredFinals.insert(gamePk)
-                        self.lookupSchedule(completion: completion)
+                        if self.displayedFinal?.gamePk == gamePk { self.displayedFinal = nil }
+                        self.lookupSchedule(team: team, completion: completion)
                     }
 
                 default:
@@ -317,8 +334,9 @@ final class GameFetcher {
         }
     }
 
-    /// True while the game's end time is less than `finalDisplayWindow` ago.
-    private func isWithinFinalWindow(gamePk: Int, info: LiveGameInfo?) -> Bool {
+    /// When the game's final-score window closes: `finalDisplayWindow` after
+    /// its end time, or after the moment this session first saw it final.
+    private func finalWindowEnd(gamePk: Int, info: LiveGameInfo?) -> Date? {
         let ended: Date
         if let info, let firstPitch = info.firstPitch,
            let start = isoFractionalFormatter.date(from: firstPitch) ?? isoFormatter.date(from: firstPitch),
@@ -330,31 +348,40 @@ final class GameFetcher {
             finalFirstSeen[gamePk] = Date()
             ended = Date()
         }
-        return Date().timeIntervalSince(ended) < Self.finalDisplayWindow
+        return ended.addingTimeInterval(Self.finalDisplayWindow)
+    }
+
+    /// Postponed, suspended and cancelled games: nothing to score.
+    private static func isNotPlayed(_ status: GameStatus) -> Bool {
+        let detailed = status.detailedState ?? ""
+        return detailed == "Postponed" || detailed.contains("Suspended") || detailed.hasPrefix("Cancelled")
     }
 
     // MARK: - Next game
 
-    // Find the next scheduled game after today (looks up to 14 days out).
-    // Today's own games are handled by the schedule lookup.
-    private func fetchNextGame(after today: String, completion: @escaping (GameState) -> Void) {
+    // Find the next scheduled game (looks up to 14 days out). Games the
+    // schedule lookup already considered are skipped by gamePk rather than by
+    // date, because MLB's schedule dates are US dates and the local date may differ.
+    private func fetchNextGame(after today: String, excluding seen: Set<Int>, team: Int,
+                               completion: @escaping (GameState) -> Void) {
         let endDate = officialDate(daysFromNow: 14)
-        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(teamId)&startDate=\(today)&endDate=\(endDate)")!
+        let url = URL(string: "\(baseURL)/api/v1/schedule?sportId=1&teamId=\(team)&startDate=\(today)&endDate=\(endDate)")!
 
         fetch(url: url, as: ScheduleResponse.self) { [weak self] result in
-            guard let self else { return }
+            guard let self, !self.isStale(team) else { return }
             switch result {
             case .failure:
                 completion(.error)
             case .success(let response):
-                for date in response.dates where date.date != today {
-                    guard let game = Self.pickGame(from: date.games, excluding: []),
-                          let gameDate = self.isoFormatter.date(from: game.gameDate) else { continue }
-                    let (opponentId, isHome) = self.opponentInfo(from: game)
+                let next = response.dates.flatMap { $0.games }
+                    .filter { !seen.contains($0.gamePk) && $0.status.abstractGameState == "Preview" && !Self.isNotPlayed($0.status) }
+                    .min { $0.gameDate < $1.gameDate }
+                if let game = next, let gameDate = self.isoFormatter.date(from: game.gameDate) {
+                    let (opponentId, isHome) = self.opponentInfo(from: game, team: team)
                     completion(.nextGame(opponentId: opponentId, isHome: isHome, date: gameDate))
-                    return
+                } else {
+                    completion(.offSeason)
                 }
-                completion(.offSeason)
             }
         }
     }
@@ -364,7 +391,8 @@ final class GameFetcher {
     private func todayOfficialDate() -> String { officialDate(daysFromNow: 0) }
 
     private func officialDate(daysFromNow days: Int) -> String {
-        Self.officialDateFormatter.string(from: Date().addingTimeInterval(TimeInterval(days) * 86_400))
+        let date = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        return Self.officialDateFormatter.string(from: date)
     }
 
     private static let officialDateFormatter: DateFormatter = {
@@ -376,11 +404,14 @@ final class GameFetcher {
 
     // MARK: - Game selection
 
-    // Prefer a live game, then the earliest upcoming game, then the most recent
-    // final. `excluding` holds finals whose display window has expired.
-    private static func pickGame(from games: [ScheduleGame], excluding: Set<Int>) -> ScheduleGame? {
+    // Prefer a live game, then a final still inside its display window, then the
+    // earliest upcoming game, then the most recent final. `excluding` holds
+    // finals whose display window has expired.
+    private static func pickGame(from games: [ScheduleGame], excluding: Set<Int>,
+                                 preferringFinal: Int? = nil) -> ScheduleGame? {
         let games = games.filter { !excluding.contains($0.gamePk) }
         if let live = games.first(where: { $0.status.abstractGameState == "Live" }) { return live }
+        if let kept = games.first(where: { $0.gamePk == preferringFinal }) { return kept }
         if let preview = games.filter({ $0.status.abstractGameState == "Preview" })
             .min(by: { $0.gameDate < $1.gameDate }) { return preview }
         if let final_ = games.filter({ $0.status.abstractGameState == "Final" })
@@ -390,14 +421,15 @@ final class GameFetcher {
 
     /// Test seam for `pickGame`: returns the chosen game's gamePk for a raw
     /// schedule payload.
-    func pickGamePk(fromScheduleData data: Data, excluding: Set<Int> = []) -> Int? {
+    func pickGamePk(fromScheduleData data: Data, excluding: Set<Int> = [], preferringFinal: Int? = nil) -> Int? {
         guard let response = try? JSONDecoder().decode(ScheduleResponse.self, from: data) else { return nil }
-        return Self.pickGame(from: response.dates.flatMap { $0.games }, excluding: excluding)?.gamePk
+        return Self.pickGame(from: response.dates.flatMap { $0.games }, excluding: excluding,
+                             preferringFinal: preferringFinal)?.gamePk
     }
 
     // Returns (opponentId, selectedTeamIsHome)
-    private func opponentInfo(from game: ScheduleGame) -> (id: Int, isHome: Bool) {
-        if game.teams.away.team.id == teamId {
+    private func opponentInfo(from game: ScheduleGame, team: Int) -> (id: Int, isHome: Bool) {
+        if game.teams.away.team.id == team {
             return (game.teams.home.team.id, false)
         } else {
             return (game.teams.away.team.id, true)
@@ -544,14 +576,13 @@ final class GameFetcher {
             let awayId   = game.teams.away.team.id
             let homeAbbr = game.teams.home.team.abbreviation ?? mlbAbbreviation(for: homeId)
             let awayAbbr = game.teams.away.team.abbreviation ?? mlbAbbreviation(for: awayId)
-            let detailed = game.status.detailedState ?? ""
             let state    = game.status.abstractGameState
 
             let homeStatus: TodayGameStatus
             let awayStatus: TodayGameStatus
             let rank: Int
 
-            if detailed == "Postponed" || detailed.contains("Suspended") {
+            if Self.isNotPlayed(game.status) {
                 homeStatus = .postponed
                 awayStatus = .postponed
                 rank = 3

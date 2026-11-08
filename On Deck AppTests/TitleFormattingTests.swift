@@ -446,6 +446,19 @@ final class AllGamesParsingTests: XCTestCase {
         }
     }
 
+    func testParsesCancelledGameAsPostponed() {
+        // The API reports cancellations as abstract "Final" with no score.
+        let data = scheduleJSON(games: [
+            gameJSON(homeId: 147, homeAbbr: "NYY", homeScore: nil,
+                     awayId: 111, awayAbbr: "BOS", awayScore: nil,
+                     abstractState: "Final", detailedState: "Cancelled: Rain")
+        ])
+        let result = fetcher.parseTodayGames(from: data)
+        if case .postponed = result[147] { } else {
+            XCTFail("Expected .postponed for a cancelled game, got \(String(describing: result[147]))")
+        }
+    }
+
     func testNoGameForTeam() {
         // COL (115) absent from schedule → not in dict → caller gets .noGame via nil coalescing
         let data = scheduleJSON(games: [
@@ -573,6 +586,20 @@ final class PickGameTests: XCTestCase {
         let data = schedule([game(pk: 1, state: "Final", date: "2026-04-13T23:05:00Z"),
                              game(pk: 2, state: "Final", date: "2026-04-14T17:00:00Z")])
         XCTAssertEqual(fetcher.pickGamePk(fromScheduleData: data), 2)
+    }
+
+    func testFinalInsideItsWindowBeatsLaterPreview() {
+        // Doubleheader: game 1 stays up for its display window before game 2 shows.
+        let data = schedule([game(pk: 1, state: "Final", date: "2026-04-14T13:05:00Z"),
+                             game(pk: 2, state: "Preview", date: "2026-04-14T19:10:00Z")])
+        XCTAssertEqual(fetcher.pickGamePk(fromScheduleData: data, preferringFinal: 1), 1)
+        XCTAssertEqual(fetcher.pickGamePk(fromScheduleData: data, preferringFinal: 99), 2)
+    }
+
+    func testLiveStillBeatsPreferredFinal() {
+        let data = schedule([game(pk: 1, state: "Final", date: "2026-04-14T13:05:00Z"),
+                             game(pk: 2, state: "Live", date: "2026-04-14T19:10:00Z")])
+        XCTAssertEqual(fetcher.pickGamePk(fromScheduleData: data, preferringFinal: 1), 2)
     }
 
     func testExpiredFinalIsSkipped() {
